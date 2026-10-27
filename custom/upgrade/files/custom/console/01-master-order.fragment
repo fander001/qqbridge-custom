@@ -1,0 +1,7 @@
+#section-usage .usage-legend i.mixed { background:var(--accent-hover) }
+
+
+/* Keep the group master switch first on the controls page. */
+#section-silent[data-page="controls"] { order: -1 !important; }
+</style>
+</head>

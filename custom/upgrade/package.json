@@ -1,0 +1,6 @@
+{
+  "name": "qqbridge-custom-upgrade",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}

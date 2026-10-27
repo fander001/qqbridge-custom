@@ -1,0 +1,12 @@
+--- a/typert.host.js
++++ b/typert.host.js
+@@ -38,7 +38,8 @@
+       result: {
+         mode: "strict",
+         typeSymbol: "dsh-setting-restart/types#RestartResult",
+-        schema: restartResultSchema
++        create: () => restartResultSchema,
++        jsonSchema: z.toJSONSchema(restartResultSchema)
+       }
+     }
+   ],

@@ -1,0 +1,24 @@
+# Local provider retry policy: bounded recovery for malformed model tool JSON.
+- id: llm-deepseek
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    defaultContextWindow: 1000000
+    streamIdleTimeoutMs: 172800000
+    retryPolicy:
+      mode: normal
+      maxRetries: 2
+      retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT, MALFORMED_RESPONSE]
+      backoff:
+        initialDelayMs: 1000
+        maxDelayMs: 8000
+        jitterRatio: 0.2
+- id: llm-deepseek-account
+  config:
+    retryPolicy:
+      mode: normal
+      maxRetries: 2
+      retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT, MALFORMED_RESPONSE]
+      backoff:
+        initialDelayMs: 1000
+        maxDelayMs: 8000
+        jitterRatio: 0.2

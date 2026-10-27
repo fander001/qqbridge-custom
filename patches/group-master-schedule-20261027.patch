@@ -1,0 +1,326 @@
+--- a/src/bridge.js
++++ b/src/bridge.js
+@@ -30,6 +30,7 @@
+ import { extractForwardIds, forwardIdFromData, sanitizeForwardId, formatForwardResponse } from './forward.js';
+ import { resolvePriceTable } from './model-prices.js';
+ import { autonomyScheduleState, nextAutonomyTransition } from './autonomy-schedule.js';
++import { normalizeMasterSchedule, masterScheduleState } from './group-master-schedule.js';
+ import { mergeGroupPolicy, groupPolicyAllows, groupReasonControl } from './group-policy.js';
+ import { GROUP_CONTROL_DEFAULTS, validateControlSettings } from './console-controls.js';
+ import { createTokenLedger } from './token-ledger.js';
+@@ -695,6 +696,8 @@
+     workspaceTitle: file.workspaceTitle ?? 'QQ 聊天',
+     ownerQQ: normalizeOwnerQQ(file.ownerQQ),
+     autonomySchedule: file.autonomySchedule ?? { enabled: false },
++    groupPolicy: mergeGroupPolicy(file.groupPolicy),
++    groupMasterSchedule: normalizeMasterSchedule(file.groupMasterSchedule),
+     allow: {
+       private: normalizeIdList(file.allow?.private ?? file.allow?.privates ?? []),
+       groups: normalizeIdList(file.allow?.groups ?? file.allow?.group ?? [])
+@@ -3503,6 +3506,8 @@
+             // 上游健康只给操作者看：它包含网关诊断信息（good/hint），
+             // 属于管理侧观测，不该进 QQ 会话里那个受限的智能体视图。
+             snowluma: snowlumaHealthSnapshot(),
++            groupMasterSchedule: normalizeMasterSchedule(cfg.groupMasterSchedule),
++            masterScheduleState: masterScheduleState(Date.now(),cfg.groupMasterSchedule),
+             effectiveGroupPolicy: groupPolicyState(),
+             autonomySchedule: autonomyStatus(),
+             activity: readActivityTail(100)
+@@ -3598,6 +3603,15 @@
+           if (req.method==='POST') {
+             let change;try{change=validateControlSettings(await readBody());}catch(error){sendJson({ok:false,error:error.message},400);return;}
+             const file=readConfigObject(path.join(ROOT,'config.json'));
++            const scheduleBefore=JSON.stringify(normalizeMasterSchedule(cfg.groupMasterSchedule));
++            if(change.groupMasterSchedule){
++              const next={...normalizeMasterSchedule(file.groupMasterSchedule),...change.groupMasterSchedule};
++              if(next.enabled&&!masterScheduleState(Date.now(),next).valid){sendJson({ok:false,error:'开启和关闭时间必须填写完整，且不能相同'},400);return;}
++              if(next.enabled&&'replyToOthersEnabled' in change){sendJson({ok:false,error:'请分别保存定时设置或手动切换总开关'},400);return;}
++              file.groupMasterSchedule=next;
++            }
++            if('replyToOthersEnabled' in change&&file.groupMasterSchedule?.enabled===true)file.groupMasterSchedule={...normalizeMasterSchedule(file.groupMasterSchedule),enabled:false};
++            const scheduleChanged=scheduleBefore!==JSON.stringify(normalizeMasterSchedule(file.groupMasterSchedule));
+             if(change.groupObserver)file.socialV2={...(file.socialV2??{}),groupObserver:{...(file.socialV2?.groupObserver??{}),...change.groupObserver}};
+             if(change.proactive){
+               const next={...(file.socialV2?.proactive??{}),...change.proactive};
+@@ -3608,16 +3622,17 @@
+             const previousPolicy=JSON.stringify(mergeGroupPolicy(cfg.groupPolicy));
+             if(change.groupPolicy){const old=mergeGroupPolicy(file.groupPolicy);file.groupPolicy={peak:{...old.peak,...change.groupPolicy.peak},offPeak:{...old.offPeak,...change.groupPolicy.offPeak}};}
+             const policyChanged=previousPolicy!==JSON.stringify(mergeGroupPolicy(file.groupPolicy));
+-            if(change.groupObserver||change.proactive||change.autonomySchedule||change.groupPolicy){
+-              atomicWriteJson(path.join(ROOT,'config.json'),file);cfg.socialV2=file.socialV2??cfg.socialV2;cfg.autonomySchedule=file.autonomySchedule;cfg.groupPolicy=file.groupPolicy;
++            if(change.groupObserver||change.proactive||change.autonomySchedule||change.groupPolicy||change.groupMasterSchedule||scheduleChanged){
++              atomicWriteJson(path.join(ROOT,'config.json'),file);cfg.socialV2=file.socialV2??cfg.socialV2;cfg.autonomySchedule=file.autonomySchedule;cfg.groupPolicy=file.groupPolicy;cfg.groupMasterSchedule=file.groupMasterSchedule;
+             }
+             if('replyToOthersEnabled' in change)applyReplyMode(change.replyToOthersEnabled?'active':'silent');
++            enforceMasterSchedule();
+             if(policyChanged)retireGroupPolicyWork();
+             if(change.groupObserver)for(const [key,w] of groupWindows)if(!w.closed&&w.spoken){w.expiresAt=Math.max(w.lastReplyAt||0,w.lastRelevantAt||0)+groupIdleMs();const lease=groupTurns.get(key);if(lease&&!lease.closed)lease.deadline=w.expiresAt+5000;}
+             if(change.proactive||change.autonomySchedule)for(const key of socialV2.conversations.keys()){clearSocialV2Timers(key);setupSleepTimerV2(key);scheduleProactiveCheckV2(key);}
+             reconcileGroupRestrictions();void maintainAutonomySchedule();log('Console: unified group controls saved');
+           }
+-          sendJson({ok:true,groupChatEnabled:readRoleState().mode!=='silent',replyToOthersEnabled:readRoleState().mode!=='silent',groupPolicy:mergeGroupPolicy(cfg.groupPolicy),effectiveGroupPolicy:groupPolicyState(),groupObserver:groupObserverConfig(),proactive:cfg.socialV2?.proactive??{},autonomySchedule:cfg.autonomySchedule??{},scheduleStatus:autonomyStatus(),deferredReplies:{supported:false,reason:'Only busy-turn wake buffering exists; blocked calls are not queued'}});return;
++          sendJson({ok:true,groupMasterSchedule:normalizeMasterSchedule(cfg.groupMasterSchedule),masterScheduleState:masterScheduleState(Date.now(),cfg.groupMasterSchedule),groupChatEnabled:groupMasterEnabled(),replyToOthersEnabled:groupMasterEnabled(),groupPolicy:mergeGroupPolicy(cfg.groupPolicy),effectiveGroupPolicy:groupPolicyState(),groupObserver:groupObserverConfig(),proactive:cfg.socialV2?.proactive??{},autonomySchedule:cfg.autonomySchedule??{},scheduleStatus:autonomyStatus(),deferredReplies:{supported:false,reason:'Only busy-turn wake buffering exists; blocked calls are not queued'}});return;
+         }
+         if (req.method === 'POST' && url.pathname === '/api/role-mode') {
+           const body = await readBody();
+@@ -8178,7 +8193,7 @@
+     const timing=autonomyScheduleState(Date.now(),cfg.autonomySchedule);
+     const phase=timing.reason==='peak'?'peak':'offPeak';
+     const policy=mergeGroupPolicy(cfg.groupPolicy);
+-    return {enabled:readRoleState().mode!=='silent',phase,policy,current:policy[phase]};
++    return {enabled:groupMasterEnabled(),phase,policy,current:policy[phase]};
+   }
+   function groupWakeAllowed(key,reason) {
+     const st=groupPolicyState();return groupPolicyAllows(st.policy,st.phase,reason,st.enabled);
+@@ -8221,6 +8236,7 @@
+     return !!work?.autonomous && (work.cancelled || !autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed);
+   }
+   async function maintainAutonomySchedule() {
++    enforceMasterSchedule();
+     reconcileGroupRestrictions();
+     if (cfg.autonomySchedule?.enabled !== true) return;
+     const allowedNow = autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed;
+@@ -8524,7 +8540,22 @@
+     }
+     saveState();saveSocialV2State();
+   }
+-  function applyReplyMode(mode) {
++  function groupMasterEnabled() {
++    const s=masterScheduleState(Date.now(),cfg.groupMasterSchedule);
++    return s.enabled?s.shouldOpen===true:readRoleState().mode!=='silent';
++  }
++  function enforceMasterSchedule() {
++    const s=masterScheduleState(Date.now(),cfg.groupMasterSchedule);
++    if(s.enabled)applyReplyMode(s.shouldOpen?'active':'silent',{source:'schedule'});
++    return s;
++  }
++  function applyReplyMode(mode,{source='manual'}={}) {
++    if(source==='manual'&&cfg.groupMasterSchedule?.enabled===true){
++      const file=readConfigObject(path.join(ROOT,'config.json'));
++      file.groupMasterSchedule={...normalizeMasterSchedule(file.groupMasterSchedule),enabled:false};
++      atomicWriteJson(path.join(ROOT,'config.json'),file);cfg.groupMasterSchedule=file.groupMasterSchedule;
++      log('Group master schedule disabled by manual switch');
++    }
+     const rs = readRoleState(); if (rs.mode === mode) return;
+     writeRoleState(rs.role, mode);
+     const ownerKey = `private:${String(cfg.ownerQQ ?? '')}`;
+@@ -8539,7 +8570,7 @@
+   }
+   function shouldBlockSilentReply(key) {
+     const roleState = readRoleState();
+-    return roleState.mode === 'silent' && key !== `private:${String(cfg.ownerQQ ?? '')}`;
++    return !groupMasterEnabled() && key !== `private:${String(cfg.ownerQQ ?? '')}`;
+   }
+ 
+   // 统一出站消息：先完整文本审计，再发送。返回是否真的发出。
+--- a/src/console-controls.js
++++ b/src/console-controls.js
+@@ -1,3 +1,4 @@
++import { validateMasterSchedulePatch } from './group-master-schedule.js';
+ import { validateGroupPolicy } from './group-policy.js';
+ export const GROUP_CONTROL_DEFAULTS = Object.freeze({ enabled:false, autonomousCooldownMs:120000, sampleProbability:0.05, maxMessagesPerTurn:3, closeAfterSendMs:15000, maxTurnMs:90000, ownerMaxTurnMs:180000, continuousReplies:false, conversationIdleMs:90000, directWakeBatchMs:1500, ownerWakeBatchMs:1000, followupQuietMs:2000 });
+ const ranges = { autonomousCooldownMs:[0,3600000],sampleProbability:[0,1],maxMessagesPerTurn:[1,8],closeAfterSendMs:[1000,600000],maxTurnMs:[10000,600000],ownerMaxTurnMs:[10000,600000],conversationIdleMs:[1000,600000],directWakeBatchMs:[1000,8000],ownerWakeBatchMs:[1000,8000],followupQuietMs:[250,30000] };
+@@ -5,6 +6,7 @@
+ export function validateControlSettings(body) {
+  if(!object(body)) throw new Error('Expected settings object');
+  const result={};
++ if ('groupMasterSchedule' in body)result.groupMasterSchedule=validateMasterSchedulePatch(body.groupMasterSchedule);
+  if ('groupPolicy' in body) result.groupPolicy=validateGroupPolicy(body.groupPolicy);
+  if ('groupChatEnabled' in body) {
+   if(typeof body.groupChatEnabled!=='boolean')throw new Error('Invalid group master switch');
+@@ -21,7 +23,7 @@
+   }result.proactive=p;
+  }
+ 
+- for(const k of Object.keys(body)) if(!['groupObserver','autonomySchedule','replyToOthersEnabled','groupChatEnabled','groupPolicy','proactive'].includes(k)) throw new Error('Unknown setting: '+k);
++ for(const k of Object.keys(body)) if(!['groupObserver','autonomySchedule','replyToOthersEnabled','groupChatEnabled','groupPolicy','proactive','groupMasterSchedule'].includes(k)) throw new Error('Unknown setting: '+k);
+  if('replyToOthersEnabled' in body) {if(typeof body.replyToOthersEnabled!=='boolean') throw new Error('Invalid reply switch');result.replyToOthersEnabled=body.replyToOthersEnabled;}
+  if('groupObserver' in body) {
+   if(!object(body.groupObserver)) throw new Error('Invalid group settings');
+--- a/public/console.html
++++ b/public/console.html
+@@ -2452,6 +2452,16 @@
+ <p class="meta">开启：使用下方高峰／闲时规则，每种召唤和巡游入口分别控制。关闭：所有群都不回复，主人在群里艾特也不回，仅保留主人私聊。会取消相关群聊任务，保留历史与记忆。</p>
+ <p class="meta">没有跨时段待回复功能。被总开关或时段策略拦住的艾特不会在开启后补回；仅保留原有的忙碌中临时唤醒队列。</p>
+ <p class="meta">仅控制 qq-bridge，不控制 AstrBot。白名单、安全限制和工具权限仍生效。</p>
++<div id="masterSchedulePanel" style="grid-column:1/-1;width:100%;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
++<h3>总开关定时控制</h3>
++<form id="masterScheduleForm">
++<div class="row"><label for="masterScheduleEnabled">启用每日定时</label><input id="masterScheduleEnabled" type="checkbox" style="width:auto"></div>
++<div class="row" style="margin-top:10px"><label for="masterScheduleStart">自动开启（北京时间）</label><input id="masterScheduleStart" type="time" style="max-width:170px"><label for="masterScheduleEnd">自动关闭（北京时间）</label><input id="masterScheduleEnd" type="time" style="max-width:170px"></div>
++<p class="meta">每天重复。支持跨午夜，例如 18:00 开启、次日 09:00 关闭；其余时间群聊总开关保持关闭。开启和关闭时间不能相同。</p>
++<p class="meta">保存并启用后，立即按当前时间调整总开关；关闭定时会保留当时的开关状态。手动切换总开关会自动停用定时。定时开启后仍受高峰／闲时响应规则限制，主人私聊不受影响。</p>
++<div class="row"><button type="submit">保存定时设置</button><span id="masterScheduleMsg" class="meta" role="status"></span></div>
++<p id="masterScheduleStatus" class="meta" role="status">定时未启用：总开关由你手动控制。</p>
++</form></div>
+ </section>
+ <section id="section-group-policy" data-page="controls" class="card span-all"><h2>2. 高峰／闲时群聊规则</h2><p id="groupPolicyStatus" role="status"></p><p class="meta">勾选表示允许此类触发；除主人真实艾特外，模型仍根据语境决定是否回复。总开关关闭时，下方所有群聊权限均不生效。</p><form id="groupPolicyForm"><div style="overflow-x:auto"><table style="width:100%"><thead><tr><th style="text-align:left">触发类型</th><th>高峰</th><th>闲时（半价）</th></tr></thead><tbody><tr><td style="padding:10px 6px">主人真实艾特<div class="meta">根据真实 QQ 账号识别，不以昵称或自称代替</div></td><td style="text-align:center"><input id="gp-peak-ownerAtMention" type="checkbox" aria-label="高峰：主人真实艾特" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-ownerAtMention" type="checkbox" aria-label="闲时：主人真实艾特" style="width:auto"></td></tr><tr><td style="padding:10px 6px">普通群友艾特<div class="meta">允许唤醒后按语境选择性回应</div></td><td style="text-align:center"><input id="gp-peak-memberAtMention" type="checkbox" aria-label="高峰：普通群友艾特" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-memberAtMention" type="checkbox" aria-label="闲时：普通群友艾特" style="width:auto"></td></tr><tr><td style="padding:10px 6px">引用机器人消息<div class="meta">任何人只引用、未艾特时使用此项</div></td><td style="text-align:center"><input id="gp-peak-quoteReply" type="checkbox" aria-label="高峰：引用机器人消息" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-quoteReply" type="checkbox" aria-label="闲时：引用机器人消息" style="width:auto"></td></tr><tr><td style="padding:10px 6px">文字召唤（名字／关键词）<div class="meta">包括主人在内；不带真实艾特的叫名字也受此项控制</div></td><td style="text-align:center"><input id="gp-peak-textWake" type="checkbox" aria-label="高峰：文字召唤（名字／关键词）" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-textWake" type="checkbox" aria-label="闲时：文字召唤（名字／关键词）" style="width:auto"></td></tr><tr><td style="padding:10px 6px">当前话题续聊<div class="meta">允许原对话人在观察窗口内不艾特接话，仍选择性回复</div></td><td style="text-align:center"><input id="gp-peak-followup" type="checkbox" aria-label="高峰：当前话题续聊" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-followup" type="checkbox" aria-label="闲时：当前话题续聊" style="width:auto"></td></tr><tr><td style="padding:10px 6px">有人聊天时抽样巡游<div class="meta">使用下方抽样概率与冷却参数</div></td><td style="text-align:center"><input id="gp-peak-ambientSampling" type="checkbox" aria-label="高峰：有人聊天时抽样巡游" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-ambientSampling" type="checkbox" aria-label="闲时：有人聊天时抽样巡游" style="width:auto"></td></tr><tr><td style="padding:10px 6px">安静时主动检查<div class="meta">使用下方检查间隔、空闲阈值与概率</div></td><td style="text-align:center"><input id="gp-peak-idleProactive" type="checkbox" aria-label="高峰：安静时主动检查" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-idleProactive" type="checkbox" aria-label="闲时：安静时主动检查" style="width:auto"></td></tr></tbody></table></div><div class="row" style="margin-top:12px"><button type="submit">保存时段响应规则</button><span class="meta" id="groupPolicyMsg" role="status"></span></div></form><p class="meta">默认高峰只开启主人真实艾特；闲时全部允许，巡游仍受概率、冷却及唤醒频率限制。取消一种召唤后，它不会改从抽样入口绕过。</p></section>
+ <section id="section-peak-controls" data-page="controls" class="card span-all"><h2>3. 峰谷时间表</h2><form id="scheduleControlsForm">
+@@ -2739,6 +2749,7 @@
+   try {
+     const s = await api('/api/status');
+     const timing = s.autonomySchedule;
++    if(s.groupMasterSchedule)renderMasterScheduleStatus(s.groupMasterSchedule,s.masterScheduleState??{});
+     if(s.effectiveGroupPolicy) renderGroupPolicyStatus({groupChatEnabled:s.roleMode!=='silent',effectiveGroupPolicy:s.effectiveGroupPolicy});
+     const timingEl = document.getElementById('autonomyScheduleStatus');
+     if (timingEl) timingEl.textContent = timing?.enabled ? (timing.allowed ? '当前闲时：使用闲时群聊规则。' : '当前高峰：使用高峰群聊规则。') + '规则与时间表见开关控制页。' : '峰谷分段已关闭：全天使用闲时规则。';
+@@ -3173,8 +3184,8 @@
+   if (r.ok) refreshDshModel();
+ });
+ async function saveReplySwitch(enabled) {
+- const status=document.getElementById('replySwitchStatus');const on=document.getElementById('silentOff'),off=document.getElementById('silentOn');on.disabled=off.disabled=true;
+- try {const r=await api('/api/control-settings','POST',{groupChatEnabled:enabled});if(!r.ok)throw new Error(r.error);await refresh();await loadConversationControls();}
++ const wasTimed=masterScheduleManaged;const status=document.getElementById('replySwitchStatus');const on=document.getElementById('silentOff'),off=document.getElementById('silentOn');on.disabled=off.disabled=true;
++ try {const r=await api('/api/control-settings','POST',{groupChatEnabled:enabled});if(!r.ok)throw new Error(r.error);await refresh();await loadConversationControls();if(wasTimed)document.getElementById('masterScheduleMsg').textContent='已手动切换总开关，定时已停用。';}
+  catch(e){status.textContent='开关保存失败：'+e.message;on.disabled=off.disabled=false;}
+ }
+ document.getElementById('silentOn').addEventListener('click',()=>saveReplySwitch(false));
+@@ -5104,6 +5115,22 @@
+   });
+ })();
+ 
++let masterScheduleManaged=false;
++function updateMasterScheduleForm(){const enabled=document.getElementById('masterScheduleEnabled').checked;document.getElementById('masterScheduleStart').required=enabled;document.getElementById('masterScheduleEnd').required=enabled;}
++function renderMasterScheduleStatus(config={},state={}){
++ masterScheduleManaged=config.enabled===true;
++ const on=document.getElementById('silentOff'),off=document.getElementById('silentOn');
++ on.textContent=masterScheduleManaged?'手动开启（停用定时）':'开启群聊';
++ off.textContent=masterScheduleManaged?'手动关闭（停用定时）':'关闭全部群聊';
++ const el=document.getElementById('masterScheduleStatus');
++ if(!masterScheduleManaged){el.textContent='定时未启用：总开关由你手动控制。';return;}
++ if(!state.valid){el.textContent='定时参数无效，群聊保持关闭；请修正开启与关闭时间。';return;}
++ let text='已启用：每天 '+config.start+' 开启，'+(state.crossMidnight?'次日 ':'')+config.end+' 关闭。当前应'+(state.shouldOpen?'开启':'关闭')+'群聊。';
++ if(state.nextTransitionAt){const at=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(state.nextTransitionAt));text+=' 下次：'+at+' '+(state.nextTransitionOpen?'开启':'关闭')+'（北京时间）。';}
++ el.textContent=text;
++}
++document.getElementById('masterScheduleEnabled').addEventListener('change',updateMasterScheduleForm);
++document.getElementById('masterScheduleForm').addEventListener('submit',e=>{e.preventDefault();void saveControlSection({groupMasterSchedule:{enabled:document.getElementById('masterScheduleEnabled').checked,start:document.getElementById('masterScheduleStart').value,end:document.getElementById('masterScheduleEnd').value}},'masterScheduleMsg');});
+ const groupPolicyKeys=['ownerAtMention','memberAtMention','quoteReply','textWake','followup','ambientSampling','idleProactive'];
+ function renderGroupPolicyStatus(r){
+  const el=document.getElementById('groupPolicyStatus');if(!el)return;
+@@ -5117,6 +5144,7 @@
+ async function loadConversationControls() {
+  try {
+   const r=await api('/api/control-settings');if(!r.ok) throw new Error(r.error);
++  const schedule=r.groupMasterSchedule??{};document.getElementById('masterScheduleEnabled').checked=schedule.enabled===true;document.getElementById('masterScheduleStart').value=schedule.start??'';document.getElementById('masterScheduleEnd').value=schedule.end??'';updateMasterScheduleForm();renderMasterScheduleStatus(schedule,r.masterScheduleState??{});
+   for(const [k,scale] of Object.entries(groupControlScales)) document.getElementById('gc-'+k).value=Number((r.groupObserver[k]/scale).toFixed(4));
+   for(const k of ['enabled','continuousReplies']) document.getElementById('gc-'+k).checked=r.groupObserver[k]===true;
+   updateGroupControls();
+--- a/scripts/audit-bridge-harness.mjs
++++ b/scripts/audit-bridge-harness.mjs
+@@ -17,6 +17,7 @@
+ import * as slang from '../src/slang-learner.js';
+ import * as sticker from '../src/sticker-lib.js';
+ import * as modelPrices from '../src/model-prices.js';
++import * as masterSchedule from '../src/group-master-schedule.js';
+ import * as groupPolicy from '../src/group-policy.js';
+ import * as consoleControls from '../src/console-controls.js';
+ import * as autonomySchedule from '../src/autonomy-schedule.js';
+@@ -152,7 +153,7 @@
+     getSocialV2State, appendSocialV2Message, recordSentMessagesV2,
+     buildWakePromptV2, buildWakeSnapshotV2, sendWakePromptV2, socialV2,
+     maintainAutonomySchedule, autonomyStatus, autonomyWork, captureSendGuard,
+-    groupPolicyState, groupWakeAllowed, groupMessageAdmitted, groupIncomingReason, reconcileGroupRestrictions, groupDispatchReasons, retireGroupPolicyWork, applyReplyMode, shouldBlockSilentReply, ownerOnlyGroupKeys, sessionPolicy, groupTurns, beginGroupTurn, groupObserverBlocked, applyGroupObserverWake,
++    enforceMasterSchedule, groupMasterEnabled, groupPolicyState, groupWakeAllowed, groupMessageAdmitted, groupIncomingReason, reconcileGroupRestrictions, groupDispatchReasons, retireGroupPolicyWork, applyReplyMode, shouldBlockSilentReply, ownerOnlyGroupKeys, sessionPolicy, groupTurns, beginGroupTurn, groupObserverBlocked, applyGroupObserverWake,
+     groupWindows, groupEventMeta, groupContinuous, groupObservationRemaining,
+     groupDirectReason, groupFollowupRelevant, noteGroupIncoming, waitGroupConversation,
+     noteModelMessagesV2, readThroughSeqV2, settleGroupObserver,
+@@ -201,7 +202,7 @@
+     SnowLumaWebSocketClient: FakeBot, text: (s) => s,
+     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
+     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker,
+-    ...groupPolicy, ...consoleControls, ...modelPrices, ...autonomySchedule, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt, renderPatch,
++    ...masterSchedule, ...groupPolicy, ...consoleControls, ...modelPrices, ...autonomySchedule, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt, renderPatch,
+     // 桥接的出图出口会调归一化（体积/动图抽帧）：VM 里必须能拿到这几个函数。
+     normalizeImageForModel: mediaNormalize.normalizeImageForModel,
+     sniffImage: mediaNormalize.sniffImage,
+--- a/scripts/test-console-controls-ui.mjs
++++ b/scripts/test-console-controls-ui.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import {mergeGroupPolicy} from '../src/group-policy.js';
+-const html=fs.readFileSync(new URL('../public/console.html',import.meta.url),'utf8');const source=html.slice(html.indexOf('const groupPolicyKeys='),html.lastIndexOf('</script>'));const elements=new Map();
+-for(const m of html.matchAll(/\bid="([^"]+)"/g)){if(m[1].startsWith('gc-')||m[1].startsWith('sc-')||m[1].startsWith('gp-')||m[1].startsWith('v2Proactive')||['groupPolicyForm','groupPolicyMsg','groupPolicyStatus','proactiveControlsForm','proactiveControlsMsg','groupControlsForm','scheduleControlsForm','groupControlsMsg','scheduleControlsMsg','scheduleCalendarInfo'].includes(m[1])){assert.ok(!elements.has(m[1]),m[1]);elements.set(m[1],{value:'',checked:false,disabled:false,textContent:'',className:'',events:{},addEventListener(k,f){this.events[k]=f;}});}}
++const html=fs.readFileSync(new URL('../public/console.html',import.meta.url),'utf8');const source=html.slice(html.indexOf('let masterScheduleManaged='),html.lastIndexOf('</script>'));const elements=new Map();
++for(const m of html.matchAll(/\bid="([^"]+)"/g)){if(m[1].startsWith('gc-')||m[1].startsWith('sc-')||m[1].startsWith('gp-')||m[1].startsWith('v2Proactive')||m[1].startsWith('masterSchedule')||['silentOff','silentOn','groupPolicyForm','groupPolicyMsg','groupPolicyStatus','proactiveControlsForm','proactiveControlsMsg','groupControlsForm','scheduleControlsForm','groupControlsMsg','scheduleControlsMsg','scheduleCalendarInfo'].includes(m[1])){assert.ok(!elements.has(m[1]),m[1]);elements.set(m[1],{value:'',checked:false,disabled:false,textContent:'',className:'',events:{},addEventListener(k,f){this.events[k]=f;}});}}
+ const group={enabled:true,continuousReplies:true,conversationIdleMs:90000,autonomousCooldownMs:120000,sampleProbability:.05,maxMessagesPerTurn:3,directWakeBatchMs:1500,ownerWakeBatchMs:1000,followupQuietMs:2000,maxTurnMs:90000,ownerMaxTurnMs:180000,closeAfterSendMs:90000};const schedule={enabled:true,peakWeekdays:[1,2,3,4,5],peakWindows:[['09:00','12:00'],['14:00','18:00']],holidays:['2026-10-01'],verifiedHolidayYears:[2026]};const calls=[];const context=vm.createContext({document:{getElementById:id=>{assert.ok(elements.has(id),'missing DOM id '+id);return elements.get(id);}},console,api:async(path,method,body)=>{calls.push({path,method,body});return {ok:true,groupChatEnabled:true,groupPolicy:mergeGroupPolicy(),effectiveGroupPolicy:{enabled:true,phase:'offPeak',current:mergeGroupPolicy().offPeak},proactive:{enabled:true,checkIntervalMinMs:1800000,checkIntervalMaxMs:5400000,idleThresholdMs:900000,probability:.3},groupObserver:group,autonomySchedule:schedule};},refresh:async()=>{}});vm.runInContext(source,context);await new Promise(r=>setTimeout(r,0));
+ let n=0;const eq=(a,b)=>{assert.equal(a,b);n++;};const el=id=>elements.get(id);
+ eq(el('gc-conversationIdleMs').value,90);eq(el('gc-autonomousCooldownMs').value,120);eq(el('gc-sampleProbability').value,5);eq(el('gc-ownerWakeBatchMs').value,1);eq(el('gc-directWakeBatchMs').value,1.5);eq(el('gc-followupQuietMs').value,2);eq(el('gc-closeAfterSendMs').disabled,true);
+@@ -10,4 +10,7 @@
+ calls.length=0;el('gp-peak-ownerAtMention').checked=true;el('gp-peak-textWake').checked=true;el('gp-offPeak-memberAtMention').checked=false;el('groupPolicyForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));sent=calls.find(x=>x.method==='POST').body.groupPolicy;eq(sent.peak.ownerAtMention,true);eq(sent.peak.textWake,true);eq(sent.offPeak.memberAtMention,false);eq(sent.peak.ambientSampling,false);eq(sent.offPeak.ambientSampling,true);eq(el('groupPolicyMsg').className,'meta ok');
+ calls.length=0;el('proactiveControlsForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));sent=calls.find(x=>x.method==='POST').body.proactive;eq(sent.checkIntervalMinMs,1800000);eq(sent.checkIntervalMaxMs,5400000);eq(sent.idleThresholdMs,900000);eq(sent.probability,.3);eq(sent.enabled,true);
+ for(const id of ['section-silent','section-group-policy','section-peak-controls','section-conversation-controls','section-proactive-controls'])assert.match(html,new RegExp('id="'+id+'" data-page="controls"'));n+=5;assert.ok(html.includes('data-view="controls"'));n++;
++eq(el('masterScheduleEnabled').checked,false);eq(el('masterScheduleStart').value,'');eq(el('masterScheduleStart').required,false);
++calls.length=0;el('masterScheduleEnabled').checked=true;el('masterScheduleEnabled').events.change();eq(el('masterScheduleStart').required,true);el('masterScheduleStart').value='18:00';el('masterScheduleEnd').value='09:00';el('masterScheduleForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));sent=calls.find(x=>x.method==='POST').body.groupMasterSchedule;eq(sent.enabled,true);eq(sent.start,'18:00');eq(sent.end,'09:00');eq(el('masterScheduleMsg').className,'meta ok');
++vm.runInContext("renderMasterScheduleStatus({enabled:true,start:'18:00',end:'09:00'},{valid:true,crossMidnight:true,shouldOpen:true,nextTransitionAt:'2026-10-28T01:00:00.000Z',nextTransitionOpen:false})",context);eq(el('silentOn').textContent.includes('\u505c\u7528\u5b9a\u65f6'),true);eq(el('masterScheduleStatus').textContent.includes('\u6b21\u65e5'),true);assert.ok(html.indexOf('id="masterSchedulePanel"')>html.indexOf('id="silentOn"'));n++;
+ console.log('PASS console UI bindings and unchanged roundtrip:',n);
+--- /dev/null
++++ b/src/group-master-schedule.js
+@@ -0,0 +1,28 @@
++const DAY=86400000,OFFSET=8*3600000;
++const clock=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
++export const MASTER_SCHEDULE_DEFAULTS=Object.freeze({enabled:false,start:'',end:'',timeZone:'Asia/Shanghai'});
++export function normalizeMasterSchedule(value={}){return {...MASTER_SCHEDULE_DEFAULTS,...value,timeZone:'Asia/Shanghai'};}
++export function validateMasterSchedulePatch(value){
++ if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid master schedule');const out={};
++ for(const [k,v] of Object.entries(value)){
++  if(k==='enabled'){if(typeof v!=='boolean')throw new Error('Invalid schedule enabled flag');}
++  else if(k==='start'||k==='end'){if(typeof v!=='string'||(v!==''&&!clock.test(v)))throw new Error('Time must use HH:mm');}
++  else if(k==='timeZone'){if(v!=='Asia/Shanghai')throw new Error('Only Beijing time is supported');}
++  else throw new Error('Unknown master schedule setting: '+k);
++  out[k]=v;
++ }return out;
++}
++export function masterScheduleState(atMs,value={}){
++ const s=normalizeMasterSchedule(value),ms=Number(atMs);
++ const valid=Number.isFinite(ms)&&clock.test(s.start)&&clock.test(s.end)&&s.start!==s.end;
++ const base={enabled:s.enabled===true,valid,timeZone:'Asia/Shanghai',start:s.start,end:s.end,crossMidnight:valid&&s.start>s.end,shouldOpen:null,nextTransitionAt:null,nextTransitionOpen:null};
++ if(!base.enabled)return base;
++ if(!valid)return {...base,shouldOpen:false,error:'Set different valid opening and closing times'};
++ const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3));const a=minutes(s.start),b=minutes(s.end);
++ const local=((ms+OFFSET)%DAY+DAY)%DAY/60000;
++ const open=a<b?local>=a&&local<b:local>=a||local<b;
++ const day=Math.floor((ms+OFFSET)/DAY)*DAY-OFFSET;const events=[];
++ for(let i=0;i<3;i++)for(const [minute,state] of [[a,true],[b,false]]){const when=day+i*DAY+minute*60000;if(when>ms)events.push({when,state});}
++ events.sort((a,b)=>a.when-b.when);const next=events[0];
++ return {...base,shouldOpen:open,nextTransitionAt:new Date(next.when).toISOString(),nextTransitionOpen:next.state};
++}
+--- /dev/null
++++ b/scripts/test-group-master-schedule.mjs
+@@ -0,0 +1,14 @@
++import assert from 'node:assert/strict';import {masterScheduleState as state,validateMasterSchedulePatch as validate} from '../src/group-master-schedule.js';import {bridgeHarness} from './audit-bridge-harness.mjs';
++let count=0;const eq=(a,b,m)=>{assert.equal(a,b,m);count++;},ok=(a,m)=>{assert.ok(a,m);count++;};const ms=s=>Date.parse('2026-10-27T'+s+'+08:00');
++for(const [start,end,tests] of [['09:00','18:00',[['08:59:59',false],['09:00:00',true],['12:00:00',true],['17:59:59',true],['18:00:00',false],['23:59:59',false]]],['18:00','09:00',[['00:00:00',true],['08:59:59',true],['09:00:00',false],['17:59:59',false],['18:00:00',true],['23:59:59',true]]],['23:00','00:00',[['00:00:00',false],['22:59:59',false],['23:00:00',true],['23:59:59',true]]]])for(const [at,open] of tests){const r=state(ms(at),{enabled:true,start,end});eq(r.valid,true);eq(r.shouldOpen,open,start+'-'+end+' at '+at);ok(Date.parse(r.nextTransitionAt)>ms(at));eq(r.timeZone,'Asia/Shanghai');}
++eq(state(ms('10:00:00'),{enabled:true,start:'09:00',end:'18:00'}).nextTransitionAt,'2026-10-27T10:00:00.000Z');eq(state(ms('20:00:00'),{enabled:true,start:'09:00',end:'18:00'}).nextTransitionAt,'2026-10-28T01:00:00.000Z');
++eq(state(ms('10:00:00')).enabled,false);eq(state(ms('10:00:00')).shouldOpen,null);eq(state(ms('10:00:00'),{enabled:true,start:'09:00',end:'09:00'}).shouldOpen,false);eq(state(NaN,{enabled:true,start:'09:00',end:'18:00'}).valid,false);
++for(const bad of [null,[],{enabled:'true'},{start:'24:00'},{end:'1:00'},{timeZone:'UTC'},{windows:[]}]){assert.throws(()=>validate(bad));count++;}
++let now=ms('19:00:00');class Clock extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
++const config={groupMasterSchedule:{enabled:true,start:'18:00',end:'20:00'},autonomySchedule:{enabled:true},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true}}};
++const h=await bridgeHarness({config,files:{'state/current-role.json':{role:null,mode:'silent'}},globals:{Date:Clock}});h.setMode('reserved2');
++try{
++ h.enforceMasterSchedule();eq(h.groupMasterEnabled(),true,'startup applies current interval');await h.ensureSession('private:123');const pk=h.state.sessions['private:123'];const privateGuard=h.captureSendGuard('private:123');await h.deliverPrompt('group:456','',{wakeReason:'ownerAtMention'});const sid=h.state.sessions['group:456'],guard=h.captureSendGuard('group:456');now=ms('20:00:00');eq(h.groupMasterEnabled(),false);assert.throws(guard);count++;h.enforceMasterSchedule();eq(h.shouldBlockSilentReply('group:456'),true);ok(h.calls.cancelled.includes(sid));eq(h.state.sessions['private:123'],pk);privateGuard();count++;
++ now=Date.parse('2026-10-28T18:00:00+08:00');h.enforceMasterSchedule();eq(h.groupMasterEnabled(),true);h.applyReplyMode('silent');eq(h.cfg.groupMasterSchedule.enabled,false,'manual switch disables schedule');now+=3600000;h.enforceMasterSchedule();eq(h.groupMasterEnabled(),false,'manual state not overwritten');eq(h.shouldBlockSilentReply('private:123'),false);
++}finally{await h.close();}
++console.log('PASS master schedule timing/runtime checks:',count);
+--- /dev/null
++++ b/scripts/test-master-schedule-api.mjs
+@@ -0,0 +1,20 @@
++import assert from 'node:assert/strict';import fs from 'node:fs';import {bridgeHarness} from './audit-bridge-harness.mjs';
++let now=Date.parse('2026-10-27T19:00:00+08:00');class Clock extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
++let count=0;const eq=(a,b,m)=>{assert.equal(a,b,m);count++;};
++const config={groupPolicy:{peak:{ownerAtMention:false},offPeak:{textWake:false}},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true}}};
++const h=await bridgeHarness({config,globals:{Date:Clock}});h.setMode('reserved2');const server=h.startConsoleServer();
++try{
++ eq(h.cfg.groupPolicy.peak.ownerAtMention,false,'saved period switches loaded on startup');eq(h.cfg.groupPolicy.offPeak.textWake,false);
++ if(!server.listening)await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
++ const req=async(body,token='fixture-console-token')=>{const r=await fetch(base+'/api/control-settings',{method:body?'POST':'GET',headers:{'content-type':'application/json','x-console-token':token},body:body?JSON.stringify(body):undefined});return {status:r.status,...await r.json()};};
++ let r=await req();eq(r.groupMasterSchedule.enabled,false);eq(r.groupMasterSchedule.start,'');eq(r.groupChatEnabled,true);
++ const original=fs.readFileSync(h.temp+'/config.json','utf8');for(const bad of [{groupMasterSchedule:{enabled:true}},{groupMasterSchedule:{enabled:true,start:'18:00',end:'18:00'}},{groupMasterSchedule:{enabled:true,start:'24:00',end:'09:00'}},{groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'},groupChatEnabled:true},{groupMasterSchedule:{enabled:'yes'}},{groupMasterSchedule:{timeZone:'UTC'}}]){r=await req(bad);eq(r.status,400);eq(fs.readFileSync(h.temp+'/config.json','utf8'),original,'rejected timer change atomic');}
++ await h.ensureSession('private:123');const ownerId=h.state.sessions['private:123'];r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}});eq(r.status,200);eq(r.groupChatEnabled,true);eq(r.masterScheduleState.crossMidnight,true);eq(r.masterScheduleState.nextTransitionOpen,false);eq(h.state.sessions['private:123'],ownerId);
++ now=Date.parse('2026-10-28T09:00:00+08:00');h.enforceMasterSchedule();r=await req();eq(r.groupChatEnabled,false);eq(r.masterScheduleState.nextTransitionAt,'2026-10-28T10:00:00.000Z');eq(r.masterScheduleState.nextTransitionOpen,true);
++ r=await req({groupChatEnabled:true});eq(r.groupChatEnabled,true);eq(r.groupMasterSchedule.enabled,false,'manual API disables timer');now+=3600000;h.enforceMasterSchedule();eq(h.groupMasterEnabled(),true,'manual state survives future ticks');
++ r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}});eq(r.groupChatEnabled,false,'enable immediately applies current closed period');r=await req({groupMasterSchedule:{enabled:false}});eq(r.groupChatEnabled,false,'disable keeps current master state');eq(r.groupMasterSchedule.start,'18:00','saved times retained when disabled');
++ r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}});const legacy=await fetch(base+'/api/role-mode',{method:'POST',headers:{'x-console-token':'fixture-console-token','content-type':'application/json'},body:JSON.stringify({mode:'active'})});eq(legacy.status,200);r=await req();eq(r.groupMasterSchedule.enabled,false,'legacy manual route also pauses timer');eq(r.groupChatEnabled,true);
++ r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}},'bad-token');eq(r.status,401);eq((await req()).groupMasterSchedule.enabled,false);
++ const saved=JSON.parse(fs.readFileSync(h.temp+'/config.json','utf8'));const next=await bridgeHarness({config:saved,globals:{Date:Clock}});try{eq(next.cfg.groupMasterSchedule.start,'18:00');eq(next.cfg.groupMasterSchedule.end,'09:00');eq(next.cfg.groupMasterSchedule.enabled,false);eq(next.cfg.groupPolicy.peak.ownerAtMention,false);}finally{await next.close();}
++}finally{await new Promise(r=>server.close(r));await h.close();}
++console.log('PASS master schedule API/persistence checks:',count);

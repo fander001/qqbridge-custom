@@ -1,0 +1,34 @@
+{
+  "project": "qqbridge魔改版",
+  "maintainer": "fander001",
+  "upstream": {
+    "repository": "https://github.com/Derpyu520/qq-bridge",
+    "commit": "a49877f4e58d04e47532d44b803360d0f001160d",
+    "version": "0.2.1-r1"
+  },
+  "snapshotStartedAtUtc": "2026-10-27T09:10:39.996974+00:00",
+  "snapshotFinishedAtUtc": "2026-10-27T09:10:43.593031+00:00",
+  "sourceRoot": "/srv/dsh/qq-bridge",
+  "snapshotKind": "Online file snapshot; production services are not stopped",
+  "completePrivateArchive": ".private/full-current-deployment.tar.gz",
+  "archiveSha256": "5b94816c8f74a81c58336971fffe8fdcda83f555124becce9d3327f6d709c980",
+  "archiveBytes": 6881571,
+  "verifiedRegularFiles": 4525,
+  "sourceCollectionSkippedFiles": 0,
+  "nodeVersion": "v24.19.0",
+  "dshVersion": "0.2.1-rc.3",
+  "notes": [
+    "Source code and deployment plugin copies are tracked; real config, roles, runtime state, dependencies and private deployment files are ignored.",
+    "Root README and example config are local documentation/template adaptations. Original versions are preserved under docs/upstream and in the private archive.",
+    "Root LICENSE is retained byte-for-byte from the source deployment.",
+    "Deployed qq-chat-v2 preset differs from source template; both are retained.",
+    "Not a complete DSH, NapCat, QQ account or operating-system image.",
+    "Public source copy; private data and prior local Git history are not distributed."
+  ],
+  "publication": {
+    "mode": "sanitized-source-only",
+    "sourceLocalCommit": "3789774e5de7c8e88ce0fbd0b9647a8e9656c24d",
+    "privateHistoryPublished": false,
+    "privateRuntimeDataIncluded": false
+  }
+}

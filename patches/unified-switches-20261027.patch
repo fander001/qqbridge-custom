@@ -1,0 +1,819 @@
+--- a/src/bridge.js
++++ b/src/bridge.js
+@@ -30,6 +30,7 @@
+ import { extractForwardIds, forwardIdFromData, sanitizeForwardId, formatForwardResponse } from './forward.js';
+ import { resolvePriceTable } from './model-prices.js';
+ import { autonomyScheduleState, nextAutonomyTransition } from './autonomy-schedule.js';
++import { mergeGroupPolicy, groupPolicyAllows, groupReasonControl } from './group-policy.js';
+ import { GROUP_CONTROL_DEFAULTS, validateControlSettings } from './console-controls.js';
+ import { createTokenLedger } from './token-ledger.js';
+ import {
+@@ -2423,6 +2424,7 @@
+   const groupLastParticipation = new Map();
+   const groupWindows = new Map();
+   const groupEventMeta = new Map();
++  const groupDispatchReasons = new Map();
+   const ownerOnlyGroupKeys = new Set();
+   /**
+    * 单次等待的租约上限：正常等待最长 = timeout 预算 + 静默窗口 + 5s 余量，
+@@ -2740,6 +2742,7 @@
+   function sessionPolicy(key) {
+     const base = [currentMode, modePreset(key, currentMode, cfg) ?? '', currentMode === 'closed-agent' ? cfg.ownerQQ : null];
+     if (readRoleState().mode === 'silent' && key !== `private:${String(cfg.ownerQQ ?? '')}`) base.push('owner-only');
++    if (String(key).startsWith('group:')) base.push('group-policy-v2',readRoleState().mode,mergeGroupPolicy(cfg.groupPolicy));
+     return JSON.stringify(base);
+   }
+ 
+@@ -2775,7 +2778,7 @@
+   function forgetConversationCaches(key) {
+     const w = groupWindows.get(key); if (w) w.closed = true; groupWindows.delete(key);
+     const g = groupTurns.get(key); if (g) g.closed = true; groupTurns.delete(key);
+-    groupEventMeta.delete(key); ownerOnlyGroupKeys.delete(key);
++    groupEventMeta.delete(key); ownerOnlyGroupKeys.delete(key); groupDispatchReasons.delete(key);
+     lastSendFailed.delete(key);
+     activeWaits.delete(key);
+     queuedHintAt.delete(key);
+@@ -3500,6 +3503,7 @@
+             // 上游健康只给操作者看：它包含网关诊断信息（good/hint），
+             // 属于管理侧观测，不该进 QQ 会话里那个受限的智能体视图。
+             snowluma: snowlumaHealthSnapshot(),
++            effectiveGroupPolicy: groupPolicyState(),
+             autonomySchedule: autonomyStatus(),
+             activity: readActivityTail(100)
+           });
+@@ -3590,28 +3594,30 @@
+           }
+           return;
+         }
+-        if (url.pathname === '/api/control-settings' && ['GET', 'POST'].includes(req.method)) {
+-          if (req.method === 'POST') {
+-            let change; try { change = validateControlSettings(await readBody()); }
+-            catch (error) { sendJson({ok:false,error:error.message},400); return; }
+-            const file = readConfigObject(path.join(ROOT,'config.json'));
+-            if (change.groupObserver) {
+-              file.socialV2 = {...(file.socialV2 ?? {}), groupObserver:{...(file.socialV2?.groupObserver ?? {}),...change.groupObserver}};
+-              cfg.socialV2 = {...(cfg.socialV2 ?? {}),groupObserver:file.socialV2.groupObserver};
++        if (url.pathname === '/api/control-settings' && ['GET','POST'].includes(req.method)) {
++          if (req.method==='POST') {
++            let change;try{change=validateControlSettings(await readBody());}catch(error){sendJson({ok:false,error:error.message},400);return;}
++            const file=readConfigObject(path.join(ROOT,'config.json'));
++            if(change.groupObserver)file.socialV2={...(file.socialV2??{}),groupObserver:{...(file.socialV2?.groupObserver??{}),...change.groupObserver}};
++            if(change.proactive){
++              const next={...(file.socialV2?.proactive??{}),...change.proactive};
++              if((next.checkIntervalMaxMs??5400000)<(next.checkIntervalMinMs??1800000)){sendJson({ok:false,error:'Maximum interval must be >= minimum'},400);return;}
++              file.socialV2={...(file.socialV2??{}),proactive:next};
+             }
+-            if (change.autonomySchedule) { file.autonomySchedule = {...(file.autonomySchedule ?? {}),...change.autonomySchedule}; cfg.autonomySchedule = file.autonomySchedule; }
+-            if (change.groupObserver || change.autonomySchedule) atomicWriteJson(path.join(ROOT,'config.json'),file);
+-            if ('replyToOthersEnabled' in change) applyReplyMode(change.replyToOthersEnabled ? 'active' : 'silent');
+-            if (change.groupObserver) {
+-              for (const [key,w] of groupWindows) if (!w.closed && w.spoken) {
+-                w.expiresAt = Math.max(w.lastReplyAt || 0,w.lastRelevantAt || 0) + groupIdleMs();
+-                const lease = groupTurns.get(key); if (lease && !lease.closed) lease.deadline = w.expiresAt + 5000;
+-              }
++            if(change.autonomySchedule)file.autonomySchedule={...(file.autonomySchedule??{}),...change.autonomySchedule};
++            const previousPolicy=JSON.stringify(mergeGroupPolicy(cfg.groupPolicy));
++            if(change.groupPolicy){const old=mergeGroupPolicy(file.groupPolicy);file.groupPolicy={peak:{...old.peak,...change.groupPolicy.peak},offPeak:{...old.offPeak,...change.groupPolicy.offPeak}};}
++            const policyChanged=previousPolicy!==JSON.stringify(mergeGroupPolicy(file.groupPolicy));
++            if(change.groupObserver||change.proactive||change.autonomySchedule||change.groupPolicy){
++              atomicWriteJson(path.join(ROOT,'config.json'),file);cfg.socialV2=file.socialV2??cfg.socialV2;cfg.autonomySchedule=file.autonomySchedule;cfg.groupPolicy=file.groupPolicy;
+             }
+-            if (change.autonomySchedule) { for (const key of socialV2.conversations.keys()) {clearSocialV2Timers(key);setupSleepTimerV2(key);} void maintainAutonomySchedule(); }
+-            log('Console: conversation controls saved');
+-          }
+-          sendJson({ok:true,replyToOthersEnabled:readRoleState().mode !== 'silent',groupObserver:groupObserverConfig(),autonomySchedule:cfg.autonomySchedule ?? {},scheduleStatus:autonomyStatus()});return;
++            if('replyToOthersEnabled' in change)applyReplyMode(change.replyToOthersEnabled?'active':'silent');
++            if(policyChanged)retireGroupPolicyWork();
++            if(change.groupObserver)for(const [key,w] of groupWindows)if(!w.closed&&w.spoken){w.expiresAt=Math.max(w.lastReplyAt||0,w.lastRelevantAt||0)+groupIdleMs();const lease=groupTurns.get(key);if(lease&&!lease.closed)lease.deadline=w.expiresAt+5000;}
++            if(change.proactive||change.autonomySchedule)for(const key of socialV2.conversations.keys()){clearSocialV2Timers(key);setupSleepTimerV2(key);scheduleProactiveCheckV2(key);}
++            reconcileGroupRestrictions();void maintainAutonomySchedule();log('Console: unified group controls saved');
++          }
++          sendJson({ok:true,groupChatEnabled:readRoleState().mode!=='silent',replyToOthersEnabled:readRoleState().mode!=='silent',groupPolicy:mergeGroupPolicy(cfg.groupPolicy),effectiveGroupPolicy:groupPolicyState(),groupObserver:groupObserverConfig(),proactive:cfg.socialV2?.proactive??{},autonomySchedule:cfg.autonomySchedule??{},scheduleStatus:autonomyStatus(),deferredReplies:{supported:false,reason:'Only busy-turn wake buffering exists; blocked calls are not queued'}});return;
+         }
+         if (req.method === 'POST' && url.pathname === '/api/role-mode') {
+           const body = await readBody();
+@@ -4782,6 +4788,7 @@
+             },
+             role: { name: roleState.role ?? null, hint: currentMode === 'reserved2' ? currentRoleHintV2() : currentRoleHint() },
+             recommended: cfg.socialV2?.provideRecommendations === false ? null : {
++              groupPolicy: key.startsWith('group:') ? groupPolicyState() : undefined,
+               wake: groupContinuous(key) ? { ...(cfg.socialV2?.wake ?? {}),
+                 preSleepWaitMs: groupIdleMs(), recommendedHint: `群聊回复后连续观察${groupIdleMs()/1000}秒，相关接话后可继续回应并重新计时。无关群聊不逐句回复，主动巡游仍受峰谷与冷却限制。` } : cfg.socialV2?.wake ?? {},
+               send: groupContinuous(key) ? { ...(cfg.socialV2?.send ?? {}), burstMaxMessages: groupObserverConfig().maxMessagesPerTurn } : cfg.socialV2?.send ?? {},
+@@ -7557,7 +7564,9 @@
+ 
+ 
+   async function assertOwnerOnlyTarget(key, replyId, atUserId) {
+-    if (readRoleState().mode !== 'silent' || !String(key).startsWith('group:')) return;
++    if (!String(key).startsWith('group:')) return;
++    const p=groupPolicyState().current;
++    if (p.memberAtMention || p.quoteReply || p.textWake || p.followup || p.ambientSampling || p.idleProactive) return;
+     if (atUserId != null && String(atUserId).trim() && String(atUserId) !== String(cfg.ownerQQ)) throw new Error('Reply switch off: cannot mention a non-administrator');
+     if (replyId != null && String(replyId).trim()) {
+       const info = await resolveReplyInfo('group', Number(key.split(':')[1]), String(replyId));
+@@ -8165,26 +8174,61 @@
+   function wakeReasonBase(reason) {
+     return String(reason ?? '').replace(/@seq\d+$/, '').split(':')[0];
+   }
++  function groupPolicyState() {
++    const timing=autonomyScheduleState(Date.now(),cfg.autonomySchedule);
++    const phase=timing.reason==='peak'?'peak':'offPeak';
++    const policy=mergeGroupPolicy(cfg.groupPolicy);
++    return {enabled:readRoleState().mode!=='silent',phase,policy,current:policy[phase]};
++  }
++  function groupWakeAllowed(key,reason) {
++    const st=groupPolicyState();return groupPolicyAllows(st.policy,st.phase,reason,st.enabled);
++  }
++  function groupIncomingReason(key,event,plain,quoteSelf) {
++    return groupDirectReason(event,plain,quoteSelf) || (groupFollowupRelevant(key,event,plain,quoteSelf)?'groupFollowup':'probability');
++  }
++  function groupMessageAdmitted(key,event,plain,quoteSelf) {
++    const reason=groupIncomingReason(key,event,plain,quoteSelf);
++    if(reason==='probability')return groupWakeAllowed(key,'probability')||groupWakeAllowed(key,'proactiveCheck');
++    return groupWakeAllowed(key,reason);
++  }
++  function reconcileGroupRestrictions() {
++    const retire=new Set();
++    for(const [key,lease] of groupTurns) if(!lease.closed&&!groupWakeAllowed(key,lease.wakeReason|| (lease.owner?'ownerAtMention':'probability')))retire.add(key);
++    for(const [key,work] of autonomyWork)if(key.startsWith('group:')&&!groupWakeAllowed(key,work.wakeReason||'proactiveCheck'))retire.add(key);
++    for(const key of retire){queued.delete(key);const q=promptQueues.get(key);if(q)for(const item of q.queue.splice(0))item.resolve({ok:true,skipped:true});promptQueues.delete(key);retireSession(key);autonomyWork.delete(key);}
++    for(const [key,st] of socialV2.conversations){
++      if(!key.startsWith('group:'))continue;
++      if(Array.isArray(st.pendingWakeReasons))st.pendingWakeReasons=st.pendingWakeReasons.filter(x=>groupWakeAllowed(key,x.reason));
++      if(st.pendingWakeTimer&&!groupWakeAllowed(key,st.pendingWakeReason||'bootstrap')){clearTimeout(st.pendingWakeTimer);st.pendingWakeTimer=null;st.pendingWakeReason=null;}
++      if(!groupWakeAllowed(key,'proactiveCheck'))cancelProactiveCheckV2(key);
++      else scheduleProactiveCheckV2(key);
++      if(!groupTurns.has(key)&&!groupWakeAllowed(key,'groupFollowup')){const w=groupWindows.get(key);if(w)w.closed=true;groupWindows.delete(key);}
++    }
++  }
+   function directReplyWake(key, reason) {
+     const base = wakeReasonBase(reason);
+     if (key === `private:${String(cfg.ownerQQ ?? '')}` && base === 'private') return true;
+-    return key.startsWith('group:') && (['ownerAtMention', 'atMention'].includes(base)
++    return key.startsWith('group:') && (['ownerAtMention', 'atMention', 'quoteReply'].includes(base)
+       || (groupContinuous(key) && ['nameMention', 'groupFollowup'].includes(base)));
+   }
+   function autonomyWakeBlocked(key, reason) {
+-    if (readRoleState().mode === 'silent' && (shouldBlockSilentReply(key) || (key.startsWith('group:') && !directReplyWake(key, reason)))) return true;
++    if (shouldBlockSilentReply(key)) return true;
++    if (String(key).startsWith('group:')) return !groupWakeAllowed(key,reason);
+     return Boolean(reason) && !directReplyWake(key, reason) && !autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed;
+   }
+   function autonomyWorkBlocked(work) {
++    if (work?.key?.startsWith('group:')) return !!work.cancelled || !groupWakeAllowed(work.key,work.wakeReason);
+     return !!work?.autonomous && (work.cancelled || !autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed);
+   }
+   async function maintainAutonomySchedule() {
++    reconcileGroupRestrictions();
+     if (cfg.autonomySchedule?.enabled !== true) return;
+     const allowedNow = autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed;
+     const transition = allowedNow !== lastAutonomyAllowed;
+     lastAutonomyAllowed = allowedNow;
+     if (!allowedNow) {
+       for (const [key, work] of autonomyWork) {
++        if (key.startsWith('group:')) continue;
+         if (!work.autonomous || work.cancelled) continue;
+         work.cancelled = true;
+         log(`[autonomy] 高峰时段，停止自主回合 ${key}`);
+@@ -8235,7 +8279,8 @@
+       seg?.type === 'at' && String(seg.data?.qq ?? '') === selfId);
+     const owner = String(event?.user_id ?? '') === String(cfg.ownerQQ ?? '');
+     if (atSelf && owner) return 'ownerAtMention';
+-    if (atSelf || quoteSelf) return 'atMention';
++    if (atSelf) return 'atMention';
++    if (quoteSelf) return 'quoteReply';
+     const lower = String(plain ?? '').toLowerCase();
+     const names = [selfNickname, ...(cfg.socialV2?.wake?.recommendedKeywords ?? [])]
+       .filter(x => typeof x === 'string' && x.trim()).map(x => x.trim().toLowerCase());
+@@ -8256,6 +8301,7 @@
+     if (!groupContinuous(key)) return;
+     const st = getSocialV2State(key), seq = st.lastUnreadSeq || 0;
+     const reason = groupDirectReason(event, plain, quoteSelf);
++    if (!groupMessageAdmitted(key,event,plain,quoteSelf)) return;
+     const uid = String(event?.user_id ?? '');
+     const list = groupEventMeta.get(key) ?? [];
+     list.push({seq, uid, reason});
+@@ -8271,10 +8317,11 @@
+     if (w.spoken) w.expiresAt = Date.now() + groupIdleMs();
+     const lease = groupTurns.get(key);
+     if (lease && !lease.closed) {
++      lease.wakeReason = reason || 'groupFollowup';
+       lease.sent = 0; // a real new reply grants a new response budget
+       if (w.spoken) lease.deadline = w.expiresAt + 5000;
+       const work = autonomyWork.get(key);
+-      if (work && work.sessionId === lease.sessionId) work.autonomous = false;
++      if (work && work.sessionId === lease.sessionId) {work.autonomous=false;work.wakeReason=lease.wakeReason;}
+     }
+   }
+   function touchGroupReply(key, lease) {
+@@ -8353,7 +8400,7 @@
+     if (!groupObserverEnabled(key)) return null;
+     const owner = wakeReasonBase(reason) === 'ownerAtMention';
+     const c = groupObserverConfig();
+-    const lease = { sessionId, owner, closed: false, sent: 0,
++    const lease = { sessionId, owner, wakeReason:reason, closed: false, sent: 0,
+       deadline: Date.now() + (owner ? c.ownerMaxTurnMs : c.maxTurnMs), closeAt: 0 };
+     if (groupContinuous(key)) {
+       const st = getSocialV2State(key);
+@@ -8419,6 +8466,7 @@
+     catch (error) { log('[group-observer] stop failed ' + key + ': ' + (error?.message ?? error)); }
+   }
+   async function maintainGroupObserver() {
++    reconcileGroupRestrictions();
+     for (const [key, w] of groupWindows) {
+       if (!groupContinuous(key) || !isSessionAllowedInCurrentMode(key) || Date.now() >= w.expiresAt) {
+         w.closed = true; groupWindows.delete(key);
+@@ -8440,7 +8488,8 @@
+     const policy = sessionPolicy(key);
+     const sessionId = state.sessions[key];
+     return () => {
+-      if (shouldBlockSilentReply(key)) throw new Error('Reply switch is off: administrator only');
++      if (shouldBlockSilentReply(key)) throw new Error('Group master is off: owner private chat only');
++      if (String(key).startsWith('group:') && !groupWakeAllowed(key,groupLease?.wakeReason || work?.wakeReason || groupDispatchReasons.get(key))) throw new Error('Current group period policy blocks this reply');
+       if (!isSessionAllowedInCurrentMode(key) || policy !== sessionPolicy(key)
+           || (sessionId && state.sessions[key] !== sessionId)) {
+         throw new Error('发送已取消：会话、模式或白名单已');
+@@ -8466,6 +8515,15 @@
+   }
+ 
+   // 静默模式：除 owner 私聊外，不发送任何在途 AI 回复。
++  function retireGroupPolicyWork() {
++    const keys=new Set([...Object.keys(state.sessions),...socialV2.conversations.keys(),...queued.keys(),...promptQueues.keys(),...groupWindows.keys()]);
++    for(const key of keys)if(key.startsWith('group:')){
++      const st=socialV2.conversations.get(key);if(st){clearTimeout(st.pendingWakeTimer);st.pendingWakeTimer=null;st.pendingWakeReason=null;st.pendingWakeReasons=[];}
++      const q=promptQueues.get(key);if(q)for(const item of q.queue.splice(0))item.resolve({ok:true,skipped:true});
++      queued.delete(key);promptQueues.delete(key);retireSession(key);clearSocialV2Timers(key);cancelSocialTimers(key);autonomyWork.delete(key);
++    }
++    saveState();saveSocialV2State();
++  }
+   function applyReplyMode(mode) {
+     const rs = readRoleState(); if (rs.mode === mode) return;
+     writeRoleState(rs.role, mode);
+@@ -8481,8 +8539,7 @@
+   }
+   function shouldBlockSilentReply(key) {
+     const roleState = readRoleState();
+-    return roleState.mode === 'silent' && key !== `private:${String(cfg.ownerQQ ?? '')}`
+-      && !(String(key).startsWith('group:') && ownerOnlyGroupKeys.has(key));
++    return roleState.mode === 'silent' && key !== `private:${String(cfg.ownerQQ ?? '')}`;
+   }
+ 
+   // 统一出站消息：先完整文本审计，再发送。返回是否真的发出。
+@@ -9545,7 +9602,7 @@
+ 
+   // 实际的 DSH prompt 投递（不再直接对外暴露，统一走 promptQueues 串行队列）。
+   async function deliverPromptNow(key, promptText, opts = {}) {
+-    if (shouldBlockSilentReply(key)) return {ok:true,skipped:true};
++    if (shouldBlockSilentReply(key) || (key.startsWith('group:')&&!groupWakeAllowed(key,opts.wakeReason||groupDispatchReasons.get(key)||'bootstrap'))) return {ok:true,skipped:true};
+     if (!isSessionAllowedInCurrentMode(key)) throw new Error(`当前模式不允许会话 ${key}`);
+     // Recheck queued wakes at dispatch time: no model call while paused/disabled
+     // and no reserved2 prompt leaking into an ordinary chat after a mode switch.
+@@ -9600,8 +9657,8 @@
+     if (!isCurrentSession(key, sessionId)) throw new Error('投递前会话已重置或权限已变化');
+     if (opts.farewell) social.exitingSessions.add(sessionId);
+     if (wakeBlocked()) return skipWake();
+-    if (opts.wakeReason && cfg.autonomySchedule?.enabled === true) {
+-      autonomyWork.set(key, { autonomous: !directReplyWake(key, opts.wakeReason), sessionId, cancelled: false });
++    if ((opts.wakeReason && cfg.autonomySchedule?.enabled === true) || key.startsWith('group:')) {
++      autonomyWork.set(key, { key, wakeReason:opts.wakeReason || groupDispatchReasons.get(key) || 'bootstrap', autonomous: !directReplyWake(key, opts.wakeReason), sessionId, cancelled: false });
+     }
+     const groupLease = opts.wakeReason ? beginGroupTurn(key, opts.wakeReason, sessionId) : null;
+     let accepted;
+@@ -10482,13 +10539,18 @@
+   }
+ 
+   function evaluateWakeTriggerV2(key, st, event, kind, textContent, plainContent, quoteTargetIsSelf) {
++    const reason=evaluateWakeTriggerV2Unchecked(key,st,event,kind,textContent,plainContent,quoteTargetIsSelf);
++    return kind === 'group' && reason && !groupWakeAllowed(key,reason) ? null : reason;
++  }
++  function evaluateWakeTriggerV2Unchecked(key, st, event, kind, textContent, plainContent, quoteTargetIsSelf) {
+     if (kind === 'private') return 'private';
+     // Actual OneBot at/reply metadata wins over active-mode and AI sleep preferences.
+     const atSelf = Array.isArray(event?.message) && event.message.some((seg) =>
+       seg?.type === 'at' && String(seg.data?.qq) === String(event?.self_id || selfUserId || ''));
+     const isOwner = String(event?.user_id ?? '') === String(cfg.ownerQQ ?? '');
+     if (atSelf && isOwner) return 'ownerAtMention';
+-    if (atSelf || quoteTargetIsSelf) return 'atMention';
++    if (atSelf) return 'atMention';
++    if (quoteTargetIsSelf) return 'quoteReply';
+     if (groupObserverEnabled(key)) {
+       if (groupContinuous(key)) {
+         const direct = groupDirectReason(event, plainContent, quoteTargetIsSelf);
+@@ -10779,7 +10841,7 @@
+     // 避免唤醒 prompt 出现两份黑话表。
+     const participationText = formatParticipationV2(st);
+     const participationLine = participationText ? `${participationText}\n\n` : '';
+-    const ownerScopeLine = readRoleState().mode === 'silent' ? '【对外回复已关闭】只回应管理员本人当前发言；群友历史消息仅作背景，不回复、不主动找群友说话。\n\n' : '';
++    const ownerScopeLine = key.startsWith('group:') ? `【当前群聊响应权限】${JSON.stringify(groupPolicyState())}\n仅回应当前开启的触发类型；关闭的艾特、文字唤醒、续聊或巡游不能用其他方式绕过。仅主人艾特开启时，只回应主人本人的当前消息，其他群友历史消息仅作背景。\n\n` : '';
+     const antiAiLine = ownerScopeLine + '【自然交流】语气以角色卡为准。先理解具体内容，温和、清楚地回应；可以表达自己的意见，不用故意装傻、乱回、阴阳或拒绝普通请求。不要把怼人当成真人感。\n\n';
+     const stickerCfg = cfg.socialV2?.sticker ?? {};
+     const stickerLine = stickerCfg.enabled !== false && stickerCfg.includeInPrompt !== false
+@@ -11058,7 +11120,7 @@
+     return false;
+   }
+ 
+-  const WAKE_PRIORITY = {
++  const WAKE_PRIORITY = { quoteReply: 80,
+     ownerAtMention: 110,
+     private: 100,
+     atMention: 90,
+@@ -11243,8 +11305,8 @@
+   }
+ 
+   function scheduleProactiveCheckV2(key) {
+-    if (!autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed) return;
+-    if (cfg.socialV2?.proactive?.enabled === false) return;
++    if (key.startsWith('group:') ? !groupWakeAllowed(key,'proactiveCheck') : !autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed) return;
++    if (!key.startsWith('group:') && cfg.socialV2?.proactive?.enabled === false) return;
+     if (socialV2.paused || currentMode !== 'reserved2') return;
+     if (!isSessionAllowedInCurrentMode(key)) return;
+     const st = getSocialV2State(key);
+@@ -11331,7 +11393,7 @@
+   // QQ 消息 → DSH prompt
+   async function handleIncoming(kind, id, event, cfg) {
+     const key = convKey(kind, id);
+-    if (readRoleState().mode === 'silent' && String(event.user_id) !== String(cfg.ownerQQ ?? '')) return;
++    if (shouldBlockSilentReply(key)) return;
+     if (!modeAllowed(key, kind, id, cfg, currentMode)) {
+       log(`忽略未授权会话 ${key}（当前模式 ${currentMode}，来自 ${event.user_id}）`);
+       return;
+@@ -11371,10 +11433,9 @@
+     if (!plainContent && !quoteTargetIsSelf) return;
+     const isOwner = String(event.user_id) === String(cfg.ownerQQ ?? '');
+     const roleState = readRoleState();
+-    if (roleState.mode === 'silent') {
+-      if (!isOwner) return;
+-      if (kind === 'group') ownerOnlyGroupKeys.add(key);
+-    }
++    if (shouldBlockSilentReply(key)) return;
++    if (kind === 'group' && !groupMessageAdmitted(key,event,plainContent,quoteTargetIsSelf)) return;
++    if (kind === 'group') groupDispatchReasons.set(key,groupIncomingReason(key,event,plainContent,quoteTargetIsSelf));
+ 
+     // 若该会话有挂起的提问/审批，先当作回答处理（用当前消息自己的文字，不含引用原文）。
+     // 审批只有管理员消息会被消费；群友消息不能因为“审批挂起”而被吞掉，应继续走正常处理。
+@@ -11478,12 +11539,12 @@
+         return;
+       }
+       if (plainContent === '/silent' || plainContent === '/quiet') {
+-        writeRoleState(roleState.role, 'silent');
++        applyReplyMode('silent');
+         await sendToQQ(key, '已进入静默模式：群友消息不再回复，仅管理员可对话。');
+         return;
+       }
+       if (plainContent === '/active' || plainContent === '/speak') {
+-        writeRoleState(roleState.role, 'active');
++        applyReplyMode('active');
+         await sendToQQ(key, '已退出静默模式，恢复正常回复。');
+         return;
+       }
+--- a/src/console-controls.js
++++ b/src/console-controls.js
+@@ -1,10 +1,27 @@
++import { validateGroupPolicy } from './group-policy.js';
+ export const GROUP_CONTROL_DEFAULTS = Object.freeze({ enabled:false, autonomousCooldownMs:120000, sampleProbability:0.05, maxMessagesPerTurn:3, closeAfterSendMs:15000, maxTurnMs:90000, ownerMaxTurnMs:180000, continuousReplies:false, conversationIdleMs:90000, directWakeBatchMs:1500, ownerWakeBatchMs:1000, followupQuietMs:2000 });
+ const ranges = { autonomousCooldownMs:[0,3600000],sampleProbability:[0,1],maxMessagesPerTurn:[1,8],closeAfterSendMs:[1000,600000],maxTurnMs:[10000,600000],ownerMaxTurnMs:[10000,600000],conversationIdleMs:[1000,600000],directWakeBatchMs:[1000,8000],ownerWakeBatchMs:[1000,8000],followupQuietMs:[250,30000] };
+ const object = x => x && typeof x === 'object' && !Array.isArray(x);
+ export function validateControlSettings(body) {
+  if(!object(body)) throw new Error('Expected settings object');
+  const result={};
+- for(const k of Object.keys(body)) if(!['groupObserver','autonomySchedule','replyToOthersEnabled'].includes(k)) throw new Error('Unknown setting: '+k);
++ if ('groupPolicy' in body) result.groupPolicy=validateGroupPolicy(body.groupPolicy);
++ if ('groupChatEnabled' in body) {
++  if(typeof body.groupChatEnabled!=='boolean')throw new Error('Invalid group master switch');
++  if('replyToOthersEnabled' in body && body.replyToOthersEnabled!==body.groupChatEnabled)throw new Error('Conflicting master switches');
++  result.replyToOthersEnabled=body.groupChatEnabled;
++ }
++ if ('proactive' in body) {
++  if(!object(body.proactive))throw new Error('Invalid proactive settings');const p={};
++  const limits={checkIntervalMinMs:[60000,86400000],checkIntervalMaxMs:[60000,86400000],idleThresholdMs:[60000,86400000],probability:[0,1]};
++  for(const [k,v] of Object.entries(body.proactive)){
++   if(k==='enabled'){if(typeof v!=='boolean')throw new Error('Invalid proactive switch');}
++   else {const r=limits[k];if(!r||typeof v!=='number'||!Number.isFinite(v)||v<r[0]||v>r[1]||(k!=='probability'&&!Number.isInteger(v)))throw new Error('Invalid proactive value: '+k);}
++   p[k]=v;
++  }result.proactive=p;
++ }
++
++ for(const k of Object.keys(body)) if(!['groupObserver','autonomySchedule','replyToOthersEnabled','groupChatEnabled','groupPolicy','proactive'].includes(k)) throw new Error('Unknown setting: '+k);
+  if('replyToOthersEnabled' in body) {if(typeof body.replyToOthersEnabled!=='boolean') throw new Error('Invalid reply switch');result.replyToOthersEnabled=body.replyToOthersEnabled;}
+  if('groupObserver' in body) {
+   if(!object(body.groupObserver)) throw new Error('Invalid group settings');
+--- a/public/console.html
++++ b/public/console.html
+@@ -1768,6 +1768,7 @@
+       <button data-view="sessions" class="nav-item"><span class="nav-icon" aria-hidden="true">☷</span>会话与审批<span class="nav-count" id="pendingCount">—</span></button>
+       <button data-view="persona" class="nav-item"><span class="nav-icon" aria-hidden="true">◉</span>人格与角色</button>
+       <div class="nav-label">聊天行为</div>
++      <button data-view="controls" class="nav-item"><span class="nav-icon" aria-hidden="true">⏻</span>开关控制</button>
+       <button data-view="social-v2" class="nav-item"><span class="nav-icon" aria-hidden="true">◈</span>二代仿真<span class="nav-note">V2</span></button>
+       <button data-view="social-v1" class="nav-item"><span class="nav-icon" aria-hidden="true">◇</span>一代仿真<span class="nav-note">V1</span></button>
+       <button data-view="slang" class="nav-item"><span class="nav-icon" aria-hidden="true">▤</span>黑话词库</button>
+@@ -2173,19 +2174,7 @@
+       </div>
+ 
+       </div></details>
+-<details class="settings-group"><summary>主动机会参数（proactive：群安静时 AI 主动冒泡）</summary><div class="settings-content">
+-      <div class="row">
+-        <label style="flex:1">启用主动机会</label><input type="checkbox" id="v2ProactiveEnabled" style="width:auto">
+-        <label style="flex:1">检查间隔（分）</label>
+-        <input type="number" id="v2ProactiveIntervalMin" min="1" style="width:80px"> ~
+-        <input type="number" id="v2ProactiveIntervalMax" min="1" style="width:80px">
+-      </div>
+-      <div class="row">
+-        <label style="flex:1">安静阈值（分）</label><input type="number" id="v2ProactiveIdleThreshold" min="1" style="width:80px">
+-        <label style="flex:1">触发概率</label><input type="number" id="v2ProactiveProbability" step="0.05" min="0" max="1" style="width:80px">
+-      </div>
+-
+-      </div></details>
++
+ <details class="settings-group"><summary>表情包参数（sticker：QQ 收藏表情体系）</summary><div class="settings-content">
+       <div class="row">
+         <label style="flex:1">启用表情包体系</label><input type="checkbox" id="v2StickerEnabled" style="width:auto">
+@@ -2454,19 +2443,34 @@
+         <span class="meta">保存后立即生效并写入 config.json</span>
+       </div>
+     </section>
+-<section id="section-conversation-controls" data-page="social-v2" class="card span-all"><h2>群聊续聊与唤醒</h2>
+-<p class="meta">默认旁观，哥哥艾特要回应，其他人艾特和续聊选择性回应。连续检测不代表每句都回复。仅保存时生效，单位为秒。</p>
+-<form id="groupControlsForm"><div class="row"><label for="gc-enabled">群聊节奏控制</label><input id="gc-enabled" type="checkbox" style="width:auto"><label for="gc-continuousReplies">连续检测相关接话</label><input id="gc-continuousReplies" type="checkbox" style="width:auto"></div><div class="row" style="margin-top:8px"><label for="gc-conversationIdleMs" style="flex:1">无相关接话后潜水（秒）</label><input id="gc-conversationIdleMs" type="number" required min="1" max="600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-autonomousCooldownMs" style="flex:1">主动参与冷却（秒）</label><input id="gc-autonomousCooldownMs" type="number" required min="0" max="3600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-sampleProbability" style="flex:1">无点名时话题抽样概率（%）</label><input id="gc-sampleProbability" type="number" required min="0" max="100" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-maxMessagesPerTurn" style="flex:1">每次回应最多分条</label><input id="gc-maxMessagesPerTurn" type="number" required min="1" max="8" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-directWakeBatchMs" style="flex:1">普通点名合并等待（秒）</label><input id="gc-directWakeBatchMs" type="number" required min="1" max="8" step="0.25" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-ownerWakeBatchMs" style="flex:1">哥哥艾特合并等待（秒）</label><input id="gc-ownerWakeBatchMs" type="number" required min="1" max="8" step="0.25" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-followupQuietMs" style="flex:1">接话消息合并静默（秒）</label><input id="gc-followupQuietMs" type="number" required min="0.25" max="30" step="0.25" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-maxTurnMs" style="flex:1">普通唤醒首次处理预算（秒）</label><input id="gc-maxTurnMs" type="number" required min="10" max="600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-ownerMaxTurnMs" style="flex:1">哥哥唤醒首次处理预算（秒）</label><input id="gc-ownerMaxTurnMs" type="number" required min="10" max="600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-closeAfterSendMs" style="flex:1">非连续模式发送后收尾（秒）</label><input id="gc-closeAfterSendMs" type="number" required min="1" max="600" step="1" style="max-width:180px"></div><p class="meta">抽样概率只是主动话题的候选唤醒，模型仍要判断是否插话；不影响真实艾特。连续模式下，发送后收尾参数不生效，以无接话时长为准。</p><button type="submit">保存续聊与唤醒设置</button><span class="meta" id="groupControlsMsg" role="status"></span></form></section><section id="section-peak-controls" data-page="social-v2" class="card span-all"><h2>峰谷与自主活动</h2><form id="scheduleControlsForm">
+-<div class="row"><label for="sc-enabled">仅在空闲（半价）时段自主活动</label><input type="checkbox" id="sc-enabled" style="width:auto"></div>
+-<p class="meta">北京时间。以下为高峰时段，其余时间为空闲时段；已核实法定节假日全天空闲。关闭此限制会允许全天自主活动，停止对外回复请用总览页总开关。</p><div class="row"><label for="sc-day-1">周一</label><input id="sc-day-1" type="checkbox" style="width:auto"><label for="sc-day-2">周二</label><input id="sc-day-2" type="checkbox" style="width:auto"><label for="sc-day-3">周三</label><input id="sc-day-3" type="checkbox" style="width:auto"><label for="sc-day-4">周四</label><input id="sc-day-4" type="checkbox" style="width:auto"><label for="sc-day-5">周五</label><input id="sc-day-5" type="checkbox" style="width:auto"><label for="sc-day-6">周六</label><input id="sc-day-6" type="checkbox" style="width:auto"><label for="sc-day-7">周日</label><input id="sc-day-7" type="checkbox" style="width:auto"></div><div class="row" style="margin-top:8px"><label for="sc-start-0">高峰时段1</label><input id="sc-start-0" type="time" required><span>至</span><input id="sc-end-0" type="time" aria-label="高峰结束1" required></div><div class="row" style="margin-top:8px"><label for="sc-start-1">高峰时段2</label><input id="sc-start-1" type="time" required><span>至</span><input id="sc-end-1" type="time" aria-label="高峰结束2" required></div><p class="meta" id="scheduleCalendarInfo"></p><p class="meta">主人私聊和群内点名的被动回应不受峰谷限制。主动阅读、主动找人说话、群聊巡游仍遵守此时间表。</p><button type="submit">保存峰谷设置</button><span class="meta" id="scheduleControlsMsg" role="status"></span></form></section>
+-<section id="section-silent" data-page="overview" class="card">
+-<h2>对外回复总开关</h2>
+-<p id="replySwitchStatus" role="status"></p>
+-<div class="row"><button id="silentOff">开启对外回复</button><button id="silentOn">关闭（仅管理员）</button></div>
+-<p class="meta">关闭后，非管理员的私聊、群内艾特和续聊都不回复，也不主动找群友说话。管理员私聊及群内互动仍按既有规则进行。切换会终止相关群聊任务，历史记录和记忆保留。</p>
+-<p class="meta">仅控制 qq-bridge；AstrBot 的回复不受此开关控制。开启仍受白名单、选择性回复和峰谷规则限制。</p>
++<section id="section-silent" data-page="controls" class="card span-all">
++<h2>1. 群聊总开关</h2><p id="replySwitchStatus" role="status"></p>
++<div class="row"><button id="silentOff">开启群聊</button><button id="silentOn">关闭全部群聊</button></div>
++<p class="meta">开启：使用下方高峰／闲时规则，每种召唤和巡游入口分别控制。关闭：所有群都不回复，主人在群里艾特也不回，仅保留主人私聊。会取消相关群聊任务，保留历史与记忆。</p>
++<p class="meta">没有跨时段待回复功能。被总开关或时段策略拦住的艾特不会在开启后补回；仅保留原有的忙碌中临时唤醒队列。</p>
++<p class="meta">仅控制 qq-bridge，不控制 AstrBot。白名单、安全限制和工具权限仍生效。</p>
+ </section>
+-<section id="section-dsh" data-page="overview" class="card span-all">
++<section id="section-group-policy" data-page="controls" class="card span-all"><h2>2. 高峰／闲时群聊规则</h2><p id="groupPolicyStatus" role="status"></p><p class="meta">勾选表示允许此类触发；除主人真实艾特外，模型仍根据语境决定是否回复。总开关关闭时，下方所有群聊权限均不生效。</p><form id="groupPolicyForm"><div style="overflow-x:auto"><table style="width:100%"><thead><tr><th style="text-align:left">触发类型</th><th>高峰</th><th>闲时（半价）</th></tr></thead><tbody><tr><td style="padding:10px 6px">主人真实艾特<div class="meta">根据真实 QQ 账号识别，不以昵称或自称代替</div></td><td style="text-align:center"><input id="gp-peak-ownerAtMention" type="checkbox" aria-label="高峰：主人真实艾特" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-ownerAtMention" type="checkbox" aria-label="闲时：主人真实艾特" style="width:auto"></td></tr><tr><td style="padding:10px 6px">普通群友艾特<div class="meta">允许唤醒后按语境选择性回应</div></td><td style="text-align:center"><input id="gp-peak-memberAtMention" type="checkbox" aria-label="高峰：普通群友艾特" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-memberAtMention" type="checkbox" aria-label="闲时：普通群友艾特" style="width:auto"></td></tr><tr><td style="padding:10px 6px">引用机器人消息<div class="meta">任何人只引用、未艾特时使用此项</div></td><td style="text-align:center"><input id="gp-peak-quoteReply" type="checkbox" aria-label="高峰：引用机器人消息" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-quoteReply" type="checkbox" aria-label="闲时：引用机器人消息" style="width:auto"></td></tr><tr><td style="padding:10px 6px">文字召唤（名字／关键词）<div class="meta">包括主人在内；不带真实艾特的叫名字也受此项控制</div></td><td style="text-align:center"><input id="gp-peak-textWake" type="checkbox" aria-label="高峰：文字召唤（名字／关键词）" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-textWake" type="checkbox" aria-label="闲时：文字召唤（名字／关键词）" style="width:auto"></td></tr><tr><td style="padding:10px 6px">当前话题续聊<div class="meta">允许原对话人在观察窗口内不艾特接话，仍选择性回复</div></td><td style="text-align:center"><input id="gp-peak-followup" type="checkbox" aria-label="高峰：当前话题续聊" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-followup" type="checkbox" aria-label="闲时：当前话题续聊" style="width:auto"></td></tr><tr><td style="padding:10px 6px">有人聊天时抽样巡游<div class="meta">使用下方抽样概率与冷却参数</div></td><td style="text-align:center"><input id="gp-peak-ambientSampling" type="checkbox" aria-label="高峰：有人聊天时抽样巡游" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-ambientSampling" type="checkbox" aria-label="闲时：有人聊天时抽样巡游" style="width:auto"></td></tr><tr><td style="padding:10px 6px">安静时主动检查<div class="meta">使用下方检查间隔、空闲阈值与概率</div></td><td style="text-align:center"><input id="gp-peak-idleProactive" type="checkbox" aria-label="高峰：安静时主动检查" style="width:auto"></td><td style="text-align:center"><input id="gp-offPeak-idleProactive" type="checkbox" aria-label="闲时：安静时主动检查" style="width:auto"></td></tr></tbody></table></div><div class="row" style="margin-top:12px"><button type="submit">保存时段响应规则</button><span class="meta" id="groupPolicyMsg" role="status"></span></div></form><p class="meta">默认高峰只开启主人真实艾特；闲时全部允许，巡游仍受概率、冷却及唤醒频率限制。取消一种召唤后，它不会改从抽样入口绕过。</p></section>
++<section id="section-peak-controls" data-page="controls" class="card span-all"><h2>3. 峰谷时间表</h2><form id="scheduleControlsForm">
++<div class="row"><label for="sc-enabled">启用峰谷分段</label><input type="checkbox" id="sc-enabled" style="width:auto"></div>
++<p class="meta">北京时间。启用后，按此时间表选择高峰／闲时响应规则；已核实的法定节假日全天按闲时。关闭峰谷分段表示全天使用闲时规则，并不关闭群聊。主人私聊的被动回复不受此分段影响。</p><div class="row"><label for="sc-day-1">周一</label><input id="sc-day-1" type="checkbox" style="width:auto"><label for="sc-day-2">周二</label><input id="sc-day-2" type="checkbox" style="width:auto"><label for="sc-day-3">周三</label><input id="sc-day-3" type="checkbox" style="width:auto"><label for="sc-day-4">周四</label><input id="sc-day-4" type="checkbox" style="width:auto"><label for="sc-day-5">周五</label><input id="sc-day-5" type="checkbox" style="width:auto"><label for="sc-day-6">周六</label><input id="sc-day-6" type="checkbox" style="width:auto"><label for="sc-day-7">周日</label><input id="sc-day-7" type="checkbox" style="width:auto"></div><div class="row" style="margin-top:8px"><label for="sc-start-0">高峰时段1</label><input id="sc-start-0" type="time" required><span>至</span><input id="sc-end-0" type="time" aria-label="高峰结束1" required></div><div class="row" style="margin-top:8px"><label for="sc-start-1">高峰时段2</label><input id="sc-start-1" type="time" required><span>至</span><input id="sc-end-1" type="time" aria-label="高峰结束2" required></div><p class="meta" id="scheduleCalendarInfo"></p><p class="meta">群内艾特、文字召唤、续聊和巡游，都由上方对应时段的勾选项决定。主人私聊自主活动继续遵守原有时段限制。</p><button type="submit">保存峰谷设置</button><span class="meta" id="scheduleControlsMsg" role="status"></span></form></section>
++<section id="section-conversation-controls" data-page="controls" class="card span-all"><h2>4. 群聊续聊与唤醒</h2>
++<p class="meta">以上时段规则允许响应后，才使用这些节奏参数。连续检测不代表每句都回复，也不会绕过高峰或总开关限制。仅保存时生效，单位为秒。</p>
++<form id="groupControlsForm"><div class="row"><label for="gc-enabled">启用群聊节奏预算（分条／回合限制）</label><input id="gc-enabled" type="checkbox" style="width:auto"><label for="gc-continuousReplies">连续接话观察（受上方时段权限限制）</label><input id="gc-continuousReplies" type="checkbox" style="width:auto"></div><div class="row" style="margin-top:8px"><label for="gc-conversationIdleMs" style="flex:1">无相关接话后潜水（秒）</label><input id="gc-conversationIdleMs" type="number" required min="1" max="600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-autonomousCooldownMs" style="flex:1">主动参与冷却（秒）</label><input id="gc-autonomousCooldownMs" type="number" required min="0" max="3600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-sampleProbability" style="flex:1">无点名时话题抽样概率（%）</label><input id="gc-sampleProbability" type="number" required min="0" max="100" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-maxMessagesPerTurn" style="flex:1">每次回应最多分条</label><input id="gc-maxMessagesPerTurn" type="number" required min="1" max="8" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-directWakeBatchMs" style="flex:1">普通点名合并等待（秒）</label><input id="gc-directWakeBatchMs" type="number" required min="1" max="8" step="0.25" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-ownerWakeBatchMs" style="flex:1">哥哥艾特合并等待（秒）</label><input id="gc-ownerWakeBatchMs" type="number" required min="1" max="8" step="0.25" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-followupQuietMs" style="flex:1">接话消息合并静默（秒）</label><input id="gc-followupQuietMs" type="number" required min="0.25" max="30" step="0.25" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-maxTurnMs" style="flex:1">普通唤醒首次处理预算（秒）</label><input id="gc-maxTurnMs" type="number" required min="10" max="600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-ownerMaxTurnMs" style="flex:1">哥哥唤醒首次处理预算（秒）</label><input id="gc-ownerMaxTurnMs" type="number" required min="10" max="600" step="1" style="max-width:180px"></div><div class="row" style="margin-top:8px"><label for="gc-closeAfterSendMs" style="flex:1">非连续模式发送后收尾（秒）</label><input id="gc-closeAfterSendMs" type="number" required min="1" max="600" step="1" style="max-width:180px"></div><p class="meta">抽样概率只是主动话题的候选唤醒，模型仍要判断是否插话；不影响真实艾特。连续模式下，发送后收尾参数不生效，以无接话时长为准。</p><button type="submit">保存续聊与唤醒设置</button><span class="meta" id="groupControlsMsg" role="status"></span></form></section>
++
++<section id="section-proactive-controls" data-page="controls" class="card span-all"><h2>5. 安静时主动检查参数</h2><p class="meta">群聊是否主动检查，只看上方时段规则中的勾选。以下是检查的时机参数，保留原来的数值；这些间隔同时用于原有主人私聊主动检查。程序定时检查本身不调用模型，通过空闲、概率和权限判断后才会唤醒模型。</p><form id="proactiveControlsForm">
++      <div class="row">
++        <label style="flex:1">主人私聊主动检查（原有独立设置）</label><input type="checkbox" id="v2ProactiveEnabled" style="width:auto">
++        <label style="flex:1">检查间隔（分）</label>
++        <input type="number" id="v2ProactiveIntervalMin" min="1" style="width:80px"> ~
++        <input type="number" id="v2ProactiveIntervalMax" min="1" style="width:80px">
++      </div>
++      <div class="row">
++        <label style="flex:1">安静阈值（分）</label><input type="number" id="v2ProactiveIdleThreshold" min="1" style="width:80px">
++        <label style="flex:1">触发概率</label><input type="number" id="v2ProactiveProbability" step="0.05" min="0" max="1" style="width:80px">
++      </div>
++
++      <button type="submit">保存主动检查参数</button><span class="meta" id="proactiveControlsMsg" role="status"></span></form></section><section id="section-switch-shortcut" data-page="overview" class="card span-all"><h2>群聊开关</h2><p class="meta">总开关、高峰／闲时响应规则、峰谷时间表和续聊参数已集中到左侧“开关控制”。</p><a class="button" href="#controls">前往开关控制</a></section><section id="section-dsh" data-page="overview" class="card span-all">
+       <h2 data-note="下一条消息生效">DSH 模型与思考强度</h2>
+       <div class="meta">模型：<span id="dshModelText">-</span> ｜ 提供方：<span id="dshProviderText">-</span></div>
+       <div class="row" style="margin-top:10px">
+@@ -2732,13 +2736,14 @@
+   try {
+     const s = await api('/api/status');
+     const timing = s.autonomySchedule;
++    if(s.effectiveGroupPolicy) renderGroupPolicyStatus({groupChatEnabled:s.roleMode!=='silent',effectiveGroupPolicy:s.effectiveGroupPolicy});
+     const timingEl = document.getElementById('autonomyScheduleStatus');
+-    if (timingEl) timingEl.textContent = timing?.enabled ? (timing.allowed ? '当前空闲：允许自主活动。' : '当前高峰：仅被动回应。') + '时间表见二代仿真页。' : '峰谷限制已关闭：允许全天自主活动。';
++    if (timingEl) timingEl.textContent = timing?.enabled ? (timing.allowed ? '当前闲时：使用闲时群聊规则。' : '当前高峰：使用高峰群聊规则。') + '规则与时间表见开关控制页。' : '峰谷分段已关闭：全天使用闲时规则。';
+ 
+     document.querySelectorAll('#modeRow button').forEach(b => (b.classList.toggle('active', b.dataset.mode === s.mode), b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode))));
+     document.getElementById('roleText').textContent = s.role || '无';
+-    document.getElementById('roleModeText').textContent = s.roleMode === 'silent' ? '仅管理员' : '对外回复开启';
+-    document.getElementById('replySwitchStatus').textContent = s.roleMode === 'silent' ? '已关闭：仅管理员可交流' : '已开启：按既有规则选择性回复';
++    document.getElementById('roleModeText').textContent = s.roleMode === 'silent' ? '仅主人私聊' : '群聊开启';
++    document.getElementById('replySwitchStatus').textContent = s.roleMode === 'silent' ? '群聊已关闭：仅保留主人私聊，群里主人艾特也不回' : '群聊已开启：按高峰／闲时规则响应';
+     document.getElementById('silentOn').disabled = s.roleMode === 'silent';
+     document.getElementById('silentOff').disabled = s.roleMode !== 'silent';
+     const modeLabel = s.mode === 'reserved' ? '一代仿真模式' : s.mode === 'reserved2' ? '二代仿真模式' : s.mode === 'closed-agent' ? '封闭 Agent' : '聊天模式';
+@@ -3166,7 +3171,7 @@
+ });
+ async function saveReplySwitch(enabled) {
+  const status=document.getElementById('replySwitchStatus');const on=document.getElementById('silentOff'),off=document.getElementById('silentOn');on.disabled=off.disabled=true;
+- try {const r=await api('/api/control-settings','POST',{replyToOthersEnabled:enabled});if(!r.ok)throw new Error(r.error);await refresh();}
++ try {const r=await api('/api/control-settings','POST',{groupChatEnabled:enabled});if(!r.ok)throw new Error(r.error);await refresh();await loadConversationControls();}
+  catch(e){status.textContent='开关保存失败：'+e.message;on.disabled=off.disabled=false;}
+ }
+ document.getElementById('silentOn').addEventListener('click',()=>saveReplySwitch(false));
+@@ -4442,6 +4447,7 @@
+ 
+ // Presentation layer: keep every existing control mounted so drafts and API contracts survive navigation.
+ const consolePages = {
++  controls: ['开关控制', '群聊的开关，在这里统一管理。', '先看总开关，再设定高峰与闲时权限。主人私聊不受群聊开关和群聊时段策略影响。'],
+   overview: ['运行总览', '让每一次连接，都自然发生。', '掌握桥接状态，轻松管理你的 QQ 智能伙伴。'],
+   sessions: ['会话与审批', '让每一段对话，都有迹可循。', '查看 QQ 与 DSH 的会话映射，以及等待你回复的审批和提问。'],
+   persona: ['人格与角色', '给你的伙伴，一点独特个性。', '选择已有角色，或用自己的语言写下新的性格与表达方式。'],
+@@ -5095,6 +5101,14 @@
+   });
+ })();
+ 
++const groupPolicyKeys=['ownerAtMention','memberAtMention','quoteReply','textWake','followup','ambientSampling','idleProactive'];
++function renderGroupPolicyStatus(r){
++ const el=document.getElementById('groupPolicyStatus');if(!el)return;
++ const state=r.effectiveGroupPolicy;const enabled=r.groupChatEnabled??state?.enabled;
++ if(!enabled){el.textContent='当前：群聊总开关关闭，仅保留主人私聊。勾选项可以提前调整保存。';return;}
++ const names={ownerAtMention:'主人艾特',memberAtMention:'群友艾特',quoteReply:'引用',textWake:'文字召唤',followup:'续聊',ambientSampling:'消息抽样',idleProactive:'冷场检查'};
++ const row=state?.current??{};el.textContent='当前为'+(state?.phase==='peak'?'高峰':'闲时')+'，允许：'+(groupPolicyKeys.filter(k=>row[k]).map(k=>names[k]).join('、')||'全部关闭')+'。';
++}
+ const groupControlScales = {"conversationIdleMs": 1000, "autonomousCooldownMs": 1000, "sampleProbability": 0.01, "maxMessagesPerTurn": 1, "directWakeBatchMs": 1000, "ownerWakeBatchMs": 1000, "followupQuietMs": 1000, "maxTurnMs": 1000, "ownerMaxTurnMs": 1000, "closeAfterSendMs": 1000};
+ 
+ async function loadConversationControls() {
+@@ -5103,6 +5117,14 @@
+   for(const [k,scale] of Object.entries(groupControlScales)) document.getElementById('gc-'+k).value=Number((r.groupObserver[k]/scale).toFixed(4));
+   for(const k of ['enabled','continuousReplies']) document.getElementById('gc-'+k).checked=r.groupObserver[k]===true;
+   updateGroupControls();
++  for(const phase of ['peak','offPeak'])for(const key of groupPolicyKeys)document.getElementById('gp-'+phase+'-'+key).checked=r.groupPolicy?.[phase]?.[key]===true;
++  renderGroupPolicyStatus(r);
++  const pc=r.proactive??{};document.getElementById('v2ProactiveEnabled').checked=pc.enabled!==false;
++  document.getElementById('v2ProactiveIntervalMin').value=(pc.checkIntervalMinMs??1800000)/60000;
++  document.getElementById('v2ProactiveIntervalMax').value=(pc.checkIntervalMaxMs??5400000)/60000;
++  document.getElementById('v2ProactiveIdleThreshold').value=(pc.idleThresholdMs??900000)/60000;
++  document.getElementById('v2ProactiveProbability').value=pc.probability??.3;
++
+   const sc=r.autonomySchedule;document.getElementById('sc-enabled').checked=sc.enabled===true;
+   for(let i=1;i<=7;i++) document.getElementById('sc-day-'+i).checked=(sc.peakWeekdays??[1,2,3,4,5]).includes(i);
+   const windows=sc.peakWindows??[['09:00','12:00'],['14:00','18:00']];
+@@ -5117,6 +5139,8 @@
+ }
+ document.getElementById('groupControlsForm').addEventListener('submit',e=>{e.preventDefault();const g={};for(const [k,scale] of Object.entries(groupControlScales))g[k]=k==='sampleProbability'?Number(document.getElementById('gc-'+k).value)*scale:Math.round(Number(document.getElementById('gc-'+k).value)*scale);for(const k of ['enabled','continuousReplies'])g[k]=document.getElementById('gc-'+k).checked;void saveControlSection({groupObserver:g},'groupControlsMsg');});
+ document.getElementById('scheduleControlsForm').addEventListener('submit',e=>{e.preventDefault();const sc={enabled:document.getElementById('sc-enabled').checked,peakWeekdays:[],peakWindows:[]};for(let i=1;i<=7;i++)if(document.getElementById('sc-day-'+i).checked)sc.peakWeekdays.push(i);for(let i=0;i<2;i++)sc.peakWindows.push([document.getElementById('sc-start-'+i).value,document.getElementById('sc-end-'+i).value]);void saveControlSection({autonomySchedule:sc},'scheduleControlsMsg');});
++document.getElementById('groupPolicyForm').addEventListener('submit',e=>{e.preventDefault();const policy={peak:{},offPeak:{}};for(const phase of ['peak','offPeak'])for(const key of groupPolicyKeys)policy[phase][key]=document.getElementById('gp-'+phase+'-'+key).checked;void saveControlSection({groupPolicy:policy},'groupPolicyMsg');});
++document.getElementById('proactiveControlsForm').addEventListener('submit',e=>{e.preventDefault();void saveControlSection({proactive:{enabled:document.getElementById('v2ProactiveEnabled').checked,checkIntervalMinMs:Math.round(Number(document.getElementById('v2ProactiveIntervalMin').value)*60000),checkIntervalMaxMs:Math.round(Number(document.getElementById('v2ProactiveIntervalMax').value)*60000),idleThresholdMs:Math.round(Number(document.getElementById('v2ProactiveIdleThreshold').value)*60000),probability:Number(document.getElementById('v2ProactiveProbability').value)}},'proactiveControlsMsg');});
+ void loadConversationControls();
+ </script>
+ </body>
+--- a/scripts/audit-bridge-harness.mjs
++++ b/scripts/audit-bridge-harness.mjs
+@@ -17,6 +17,7 @@
+ import * as slang from '../src/slang-learner.js';
+ import * as sticker from '../src/sticker-lib.js';
+ import * as modelPrices from '../src/model-prices.js';
++import * as groupPolicy from '../src/group-policy.js';
+ import * as consoleControls from '../src/console-controls.js';
+ import * as autonomySchedule from '../src/autonomy-schedule.js';
+ import * as tokenLedger from '../src/token-ledger.js';
+@@ -151,7 +152,7 @@
+     getSocialV2State, appendSocialV2Message, recordSentMessagesV2,
+     buildWakePromptV2, buildWakeSnapshotV2, sendWakePromptV2, socialV2,
+     maintainAutonomySchedule, autonomyStatus, autonomyWork, captureSendGuard,
+-    applyReplyMode, shouldBlockSilentReply, ownerOnlyGroupKeys, sessionPolicy, groupTurns, beginGroupTurn, groupObserverBlocked, applyGroupObserverWake,
++    groupPolicyState, groupWakeAllowed, groupMessageAdmitted, groupIncomingReason, reconcileGroupRestrictions, groupDispatchReasons, retireGroupPolicyWork, applyReplyMode, shouldBlockSilentReply, ownerOnlyGroupKeys, sessionPolicy, groupTurns, beginGroupTurn, groupObserverBlocked, applyGroupObserverWake,
+     groupWindows, groupEventMeta, groupContinuous, groupObservationRemaining,
+     groupDirectReason, groupFollowupRelevant, noteGroupIncoming, waitGroupConversation,
+     noteModelMessagesV2, readThroughSeqV2, settleGroupObserver,
+@@ -182,7 +183,10 @@
+   };
+   bot.onPrivateMessage(async (event) => {`);
+   const timers = new Set();
+-  const context = vm.createContext({
++  // Stable off-peak default for tests unrelated to scheduling. Scheduling tests inject their own Date.
++  const realStarted=Date.now(),reference=Date.parse('2026-10-26T19:00:00+08:00');
++  class DefaultClock extends Date {constructor(...args){super(...(args.length?args:[DefaultClock.now()]));}static now(){return reference+Date.now()-realStarted;}}
++  const context = vm.createContext({ Date:DefaultClock,
+     fs, os, path, http, crypto, fileURLToPath, URL, Buffer, AbortSignal, console: { log() {}, error() {} },
+     fetch: fakeFetch,
+     // 锁文件探测用（bridge.js 顶层的 consolePortInUse）；
+@@ -197,7 +201,7 @@
+     SnowLumaWebSocketClient: FakeBot, text: (s) => s,
+     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
+     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker,
+-    ...consoleControls, ...modelPrices, ...autonomySchedule, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt, renderPatch,
++    ...groupPolicy, ...consoleControls, ...modelPrices, ...autonomySchedule, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt, renderPatch,
+     // 桥接的出图出口会调归一化（体积/动图抽帧）：VM 里必须能拿到这几个函数。
+     normalizeImageForModel: mediaNormalize.normalizeImageForModel,
+     sniffImage: mediaNormalize.sniffImage,
+--- a/scripts/test-group-continuous90.mjs
++++ b/scripts/test-group-continuous90.mjs
+@@ -51,19 +51,19 @@
+  now=Date.parse('2026-10-27T10:00:00+08:00');const h=await make();try{
+   const st=h.getSocialV2State(key);st.wakeTimes=Array(200).fill(now-500);st.lastAiReplyAt=now;
+   await h.sendWakePromptV2(key,reason);
+-  eq(h.calls.prompts.length,1,reason+' bypasses autonomous wake caps and cooldown at peak');
+-  eq(h.autonomyWork.get(key).autonomous,false);
++  eq(h.calls.prompts.length,reason==='ownerAtMention'?1:0,reason+' obeys explicit peak policy');
++  if(reason==='ownerAtMention')eq(h.autonomyWork.get(key).autonomous,false);
+  }finally{await h.close();}
+ }
+ {
+  now=Date.parse('2026-10-27T10:00:00+08:00');const h=await make();try{
+   const st=h.getSocialV2State(key),call=event(321,null,'Sagiri hello');
+-  eq(h.evaluateWakeTriggerV2(key,st,call,'group','Sagiri hello','Sagiri hello',false),'nameMention');
+-  eq(h.autonomyWakeBlocked(key,'nameMention@seq4'),false);
++  eq(h.evaluateWakeTriggerV2(key,st,call,'group','Sagiri hello','Sagiri hello',false),null);
++  eq(h.autonomyWakeBlocked(key,'nameMention@seq4'),true);
+   const missing=event(123,'999');delete missing.self_id;
+   eq(h.evaluateWakeTriggerV2(key,st,missing,'group','hello','hello',false),'ownerAtMention','trusted self ID fallback');
+-  const lease=await engaged(h);incoming(h,event(321,null,'continue'));
+-  eq(h.autonomyWakeBlocked(key,'groupFollowup'),false);
++  incoming(h,event(123,'999'));await h.deliverPrompt(key,'',{wakeReason:'ownerAtMention@seq1'});await h.sendToQQ(key,'owner reply');
++  incoming(h,event(321,null,'continue'));eq(h.autonomyWakeBlocked(key,'groupFollowup'),true);
+   const other=event(888,null,'ambient');eq(h.evaluateWakeTriggerV2(key,st,other,'group','ambient','ambient',false),null,'peak still blocks unsolicited roaming');
+  }finally{await h.close();}
+ }
+--- a/scripts/test-console-controls.mjs
++++ b/scripts/test-console-controls.mjs
+@@ -15,8 +15,8 @@
+  r=await req({replyToOthersEnabled:false});eq(r.status,200);eq(r.replyToOthersEnabled,false);eq(h.state.sessions[pk],ownerSession);eq(h.state.sessions[gk],undefined);ok(h.calls.cancelled.includes(oldSession));ok(st.agentToken!==oldToken);eq(h.groupWindows.has(gk),false);eq(h.shouldBlockSilentReply(pk),false);eq(h.shouldBlockSilentReply('private:321'),true);eq(h.shouldBlockSilentReply(gk),true);assert.throws(guard);n++;
+  const event=uid=>({user_id:uid,self_id:999,message_id:42,message:[{type:'text',data:{text:'hi'}},{type:'at',data:{qq:'999'}}],sender:{nickname:'fixture'}});
+  const before=h.calls.prompts.length;await h.handleIncoming('group',456,event(321),h.cfg);eq(h.calls.prompts.length,before);eq(h.ownerOnlyGroupKeys.has(gk),false);
+- await h.handleIncoming('group',456,event(123),h.cfg);eq(h.ownerOnlyGroupKeys.has(gk),true);eq(h.shouldBlockSilentReply(gk),false);await new Promise(r=>setTimeout(r,1250));ok(h.calls.prompts.length>before,'owner group mention still wakes');
+- ok(h.autonomyWakeBlocked(gk,'proactiveCheck'));ok(h.autonomyWakeBlocked(gk,'timeout'));eq(h.autonomyWakeBlocked(gk,'ownerAtMention'),false);
++ await h.handleIncoming('group',456,event(123),h.cfg);eq(h.ownerOnlyGroupKeys.has(gk),false);eq(h.shouldBlockSilentReply(gk),true);await new Promise(r=>setTimeout(r,1250));eq(h.calls.prompts.length,before,'master off also blocks owner group mention');
++ ok(h.autonomyWakeBlocked(gk,'proactiveCheck'));ok(h.autonomyWakeBlocked(gk,'timeout'));eq(h.autonomyWakeBlocked(gk,'ownerAtMention'),true);
+  const pcount=h.calls.prompts.length;await h.handleIncoming('group',456,event(321),h.cfg);eq(h.calls.prompts.length,pcount);
+  r=await req({replyToOthersEnabled:true});eq(r.replyToOthersEnabled,true);eq(h.ownerOnlyGroupKeys.size,0);eq(h.shouldBlockSilentReply('private:321'),false);
+  r=await req(null,'bad-token');eq(r.status,401);r=await req({replyToOthersEnabled:false},st.agentToken);eq(r.status,401);
+--- a/scripts/test-console-controls-ui.mjs
++++ b/scripts/test-console-controls-ui.mjs
+@@ -1,10 +1,13 @@
+-import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
+-const html=fs.readFileSync(new URL('../public/console.html',import.meta.url),'utf8');const source=html.slice(html.indexOf('const groupControlScales = '),html.lastIndexOf('</script>'));const elements=new Map();
+-for(const m of html.matchAll(/\bid="([^"]+)"/g)){if(m[1].startsWith('gc-')||m[1].startsWith('sc-')||['groupControlsForm','scheduleControlsForm','groupControlsMsg','scheduleControlsMsg','scheduleCalendarInfo'].includes(m[1])){assert.ok(!elements.has(m[1]),m[1]);elements.set(m[1],{value:'',checked:false,disabled:false,textContent:'',className:'',events:{},addEventListener(k,f){this.events[k]=f;}});}}
+-const group={enabled:true,continuousReplies:true,conversationIdleMs:90000,autonomousCooldownMs:120000,sampleProbability:.05,maxMessagesPerTurn:3,directWakeBatchMs:1500,ownerWakeBatchMs:1000,followupQuietMs:2000,maxTurnMs:90000,ownerMaxTurnMs:180000,closeAfterSendMs:90000};const schedule={enabled:true,peakWeekdays:[1,2,3,4,5],peakWindows:[['09:00','12:00'],['14:00','18:00']],holidays:['2026-10-01'],verifiedHolidayYears:[2026]};const calls=[];const context=vm.createContext({document:{getElementById:id=>{assert.ok(elements.has(id),'missing DOM id '+id);return elements.get(id);}},console,api:async(path,method,body)=>{calls.push({path,method,body});return {ok:true,groupObserver:group,autonomySchedule:schedule};},refresh:async()=>{}});vm.runInContext(source,context);await new Promise(r=>setTimeout(r,0));
++import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import {mergeGroupPolicy} from '../src/group-policy.js';
++const html=fs.readFileSync(new URL('../public/console.html',import.meta.url),'utf8');const source=html.slice(html.indexOf('const groupPolicyKeys='),html.lastIndexOf('</script>'));const elements=new Map();
++for(const m of html.matchAll(/\bid="([^"]+)"/g)){if(m[1].startsWith('gc-')||m[1].startsWith('sc-')||m[1].startsWith('gp-')||m[1].startsWith('v2Proactive')||['groupPolicyForm','groupPolicyMsg','groupPolicyStatus','proactiveControlsForm','proactiveControlsMsg','groupControlsForm','scheduleControlsForm','groupControlsMsg','scheduleControlsMsg','scheduleCalendarInfo'].includes(m[1])){assert.ok(!elements.has(m[1]),m[1]);elements.set(m[1],{value:'',checked:false,disabled:false,textContent:'',className:'',events:{},addEventListener(k,f){this.events[k]=f;}});}}
++const group={enabled:true,continuousReplies:true,conversationIdleMs:90000,autonomousCooldownMs:120000,sampleProbability:.05,maxMessagesPerTurn:3,directWakeBatchMs:1500,ownerWakeBatchMs:1000,followupQuietMs:2000,maxTurnMs:90000,ownerMaxTurnMs:180000,closeAfterSendMs:90000};const schedule={enabled:true,peakWeekdays:[1,2,3,4,5],peakWindows:[['09:00','12:00'],['14:00','18:00']],holidays:['2026-10-01'],verifiedHolidayYears:[2026]};const calls=[];const context=vm.createContext({document:{getElementById:id=>{assert.ok(elements.has(id),'missing DOM id '+id);return elements.get(id);}},console,api:async(path,method,body)=>{calls.push({path,method,body});return {ok:true,groupChatEnabled:true,groupPolicy:mergeGroupPolicy(),effectiveGroupPolicy:{enabled:true,phase:'offPeak',current:mergeGroupPolicy().offPeak},proactive:{enabled:true,checkIntervalMinMs:1800000,checkIntervalMaxMs:5400000,idleThresholdMs:900000,probability:.3},groupObserver:group,autonomySchedule:schedule};},refresh:async()=>{}});vm.runInContext(source,context);await new Promise(r=>setTimeout(r,0));
+ let n=0;const eq=(a,b)=>{assert.equal(a,b);n++;};const el=id=>elements.get(id);
+ eq(el('gc-conversationIdleMs').value,90);eq(el('gc-autonomousCooldownMs').value,120);eq(el('gc-sampleProbability').value,5);eq(el('gc-ownerWakeBatchMs').value,1);eq(el('gc-directWakeBatchMs').value,1.5);eq(el('gc-followupQuietMs').value,2);eq(el('gc-closeAfterSendMs').disabled,true);
+ el('groupControlsForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));let sent=calls.find(x=>x.method==='POST').body.groupObserver;for(const [key,value] of Object.entries(group))eq(sent[key],value);
+ eq(el('groupControlsMsg').className,'meta ok');el('gc-continuousReplies').checked=false;el('gc-continuousReplies').events.change();eq(el('gc-closeAfterSendMs').disabled,false);
+ calls.length=0;el('scheduleControlsForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));sent=calls.find(x=>x.method==='POST').body.autonomySchedule;eq(JSON.stringify(sent.peakWeekdays),JSON.stringify(schedule.peakWeekdays));eq(JSON.stringify(sent.peakWindows),JSON.stringify(schedule.peakWindows));eq(sent.enabled,true);eq(el('scheduleControlsMsg').className,'meta ok');
++calls.length=0;el('gp-peak-ownerAtMention').checked=true;el('gp-peak-textWake').checked=true;el('gp-offPeak-memberAtMention').checked=false;el('groupPolicyForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));sent=calls.find(x=>x.method==='POST').body.groupPolicy;eq(sent.peak.ownerAtMention,true);eq(sent.peak.textWake,true);eq(sent.offPeak.memberAtMention,false);eq(sent.peak.ambientSampling,false);eq(sent.offPeak.ambientSampling,true);eq(el('groupPolicyMsg').className,'meta ok');
++calls.length=0;el('proactiveControlsForm').events.submit({preventDefault(){}});await new Promise(r=>setTimeout(r,0));sent=calls.find(x=>x.method==='POST').body.proactive;eq(sent.checkIntervalMinMs,1800000);eq(sent.checkIntervalMaxMs,5400000);eq(sent.idleThresholdMs,900000);eq(sent.probability,.3);eq(sent.enabled,true);
++for(const id of ['section-silent','section-group-policy','section-peak-controls','section-conversation-controls','section-proactive-controls'])assert.match(html,new RegExp('id="'+id+'" data-page="controls"'));n+=5;assert.ok(html.includes('data-view="controls"'));n++;
+ console.log('PASS console UI bindings and unchanged roundtrip:',n);
+--- a/scripts/test-group-participation.mjs
++++ b/scripts/test-group-participation.mjs
+@@ -10,12 +10,12 @@
+  const h=await make();try {
+   const st=h.getSocialV2State('group:456');st.wakeConfig.triggers={anyMessage:true,atMention:false};
+   assert.equal(h.evaluateWakeTriggerV2('group:456',st,event(),'group','hello','hello',false),'ownerAtMention');checks++;
+-  assert.equal(h.evaluateWakeTriggerV2('group:456',st,event(321),'group','hello','hello',false),'atMention');checks++;
++  assert.equal(h.evaluateWakeTriggerV2('group:456',st,event(321),'group','hello','hello',false),null);checks++;
+   const fake=event(321);fake.sender.nickname='owner';
+-  assert.equal(h.evaluateWakeTriggerV2('group:456',st,fake,'group','hello','hello',false),'atMention');checks++;
+-  assert.equal(h.evaluateWakeTriggerV2('group:456',st,event(123,'all'),'group','hello','hello',false),'anyMessage');checks++;
++  assert.equal(h.evaluateWakeTriggerV2('group:456',st,fake,'group','hello','hello',false),null);checks++;
++  assert.equal(h.evaluateWakeTriggerV2('group:456',st,event(123,'all'),'group','hello','hello',false),null);checks++;
+   for(const reason of ['atMention','ownerAtMention','atMention@seq3','ownerAtMention@seq4']){
+-   assert.equal(h.autonomyWakeBlocked('group:456',reason),false);checks++;
++   assert.equal(h.autonomyWakeBlocked('group:456',reason),!reason.startsWith('ownerAtMention'));checks++;
+   }
+   assert.equal(h.autonomyWakeBlocked('private:123','private@seq3'),false);checks++;
+   for(const reason of ['bootstrap','anyMessage','probability','question','nameMention','timeout','replyCheck','proactiveCheck']){
+@@ -32,8 +32,8 @@
+  const h=await make();try {
+   await h.handleIncoming('group',456,event(uid),h.cfg);
+   await new Promise(r=>setTimeout(r,1200));
+-  assert.equal(h.calls.prompts.length,1,'first mention at peak');checks++;
+-  assert.equal(h.getSocialV2State('group:456').lastWakeReason,reason);checks++;
++  assert.equal(h.calls.prompts.length,uid===123?1:0,'peak accepts only owner mention');checks++;
++  if(uid===123){assert.equal(h.getSocialV2State('group:456').lastWakeReason,reason);checks++;}
+  }finally{await h.close();}
+ }
+ {
+@@ -56,17 +56,18 @@
+ }
+ {
+  const h=await make();try {
+-  h.autonomyWork.set('group:456',{autonomous:false,sessionId:'direct',cancelled:false});
+-  await h.maintainAutonomySchedule();assert.ok(!h.calls.cancelled.includes('direct'));checks++;
+-  h.autonomyWork.set('group:456',{autonomous:true,sessionId:'autonomous',cancelled:false});
+-  await h.maintainAutonomySchedule();assert.ok(h.calls.cancelled.includes('autonomous'));checks++;
++  await h.deliverPrompt('group:456','',{wakeReason:'ownerAtMention'});const sid=h.state.sessions['group:456'];
++  await h.maintainAutonomySchedule();assert.ok(!h.calls.cancelled.includes(sid));checks++;
++  h.autonomyWork.set('group:456',{key:'group:456',wakeReason:'probability',autonomous:true,sessionId:sid,cancelled:false});
++  await h.maintainAutonomySchedule();assert.ok(h.calls.cancelled.includes(sid));checks++;
++
+  }finally{await h.close();}
+ }
+ {
+  now=Date.parse('2026-10-26T08:59:59+08:00');const h=await make();try {
+   h.setReady(false);await h.deliverPrompt('group:456','queued direct',{wakeReason:'atMention'});
+   now=Date.parse('2026-10-26T09:00:00+08:00');h.setReady(true);await h.flushQueue();
+-  assert.equal(h.calls.prompts.length,1,'queued direct reply allowed across peak boundary');checks++;
++  assert.equal(h.calls.prompts.length,0,'queued nonowner direct reply denied across peak boundary');checks++;
+  }finally{await h.close();}
+ }
+ {
+--- /dev/null
++++ b/src/group-policy.js
+@@ -0,0 +1,32 @@
++export const GROUP_POLICY_DEFAULTS = Object.freeze({
++ peak: Object.freeze({ownerAtMention:true,memberAtMention:false,quoteReply:false,textWake:false,followup:false,ambientSampling:false,idleProactive:false}),
++ offPeak: Object.freeze({ownerAtMention:true,memberAtMention:true,quoteReply:true,textWake:true,followup:true,ambientSampling:true,idleProactive:true})
++});
++export const GROUP_POLICY_KEYS = Object.freeze(Object.keys(GROUP_POLICY_DEFAULTS.peak));
++export function mergeGroupPolicy(value={}) {
++ return {peak:{...GROUP_POLICY_DEFAULTS.peak,...value?.peak},offPeak:{...GROUP_POLICY_DEFAULTS.offPeak,...value?.offPeak}};
++}
++export function groupReasonControl(reason) {
++ const base=String(reason??'').replace(/@seq\d+$/,'');
++ if(base==='ownerAtMention')return 'ownerAtMention';
++ if(base==='atMention')return 'memberAtMention';
++ if(base==='quoteReply')return 'quoteReply';
++ if(base==='groupFollowup')return 'followup';
++ if(base==='probability'||base==='anyMessage')return 'ambientSampling';
++ if(['nameMention','question','poke'].includes(base)||base.startsWith('keyword:')||base.startsWith('speaker:'))return 'textWake';
++ return 'idleProactive';
++}
++export function groupPolicyAllows(policy,phase,reason,enabled=true) {
++ if(!enabled)return false;
++ return mergeGroupPolicy(policy)[phase==='peak'?'peak':'offPeak'][groupReasonControl(reason)]===true;
++}
++export function validateGroupPolicy(value) {
++ if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid groupPolicy');
++ const out={};
++ for(const [phase,row] of Object.entries(value)) {
++  if(!['peak','offPeak'].includes(phase)||!row||typeof row!=='object'||Array.isArray(row))throw new Error('Invalid group policy period');
++  out[phase]={};
++  for(const [key,v] of Object.entries(row)){if(!GROUP_POLICY_KEYS.includes(key)||typeof v!=='boolean')throw new Error('Invalid group policy switch: '+key);out[phase][key]=v;}
++ }
++ return out;
++}
+--- /dev/null
++++ b/scripts/test-unified-group-policy.mjs
+@@ -0,0 +1,51 @@
++import assert from 'node:assert/strict';import {bridgeHarness} from './audit-bridge-harness.mjs';import {mergeGroupPolicy,groupPolicyAllows,validateGroupPolicy,GROUP_POLICY_KEYS} from '../src/group-policy.js';import {validateControlSettings} from '../src/console-controls.js';
++let count=0;const eq=(a,b,m)=>{assert.equal(a,b,m);count++;},ok=(a,m)=>{assert.ok(a,m);count++;};
++for(const phase of ['peak','offPeak'])for(const key of GROUP_POLICY_KEYS){const reason={ownerAtMention:'ownerAtMention',memberAtMention:'atMention',quoteReply:'quoteReply',textWake:'nameMention',followup:'groupFollowup',ambientSampling:'probability',idleProactive:'proactiveCheck'}[key];eq(groupPolicyAllows({},phase,reason),phase==='offPeak'||key==='ownerAtMention');eq(groupPolicyAllows({},phase,reason,false),false);const p=mergeGroupPolicy();p[phase][key]=!p[phase][key];eq(groupPolicyAllows(p,phase,reason),p[phase][key]);}
++for(const bad of [null,[],{night:{}},{peak:[]},{peak:{textWake:1}},{offPeak:{other:true}}]){assert.throws(()=>validateGroupPolicy(bad));count++;}
++assert.throws(()=>validateControlSettings({groupChatEnabled:false,replyToOthersEnabled:true}));count++;
++let now=Date.parse('2026-10-27T10:00:00+08:00');class Clock extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
++const math=Object.create(Math);math.random=()=>.01;
++const config={autonomySchedule:{enabled:true,peakWindows:[['09:00','12:00'],['14:00','18:00']],peakWeekdays:[1,2,3,4,5],holidays:[]},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true,conversationIdleMs:90000,sampleProbability:.05},wake:{batchWindowMs:1000,recommendedKeywords:['Sagiri']},proactive:{enabled:true}}};
++const make=async()=>{const h=await bridgeHarness({config:structuredClone(config),globals:{Date:Clock,Math:math}});h.setMode('reserved2');h.setSelfIdentity('Sagiri','999');return h;};
++const key='group:456',pk='private:123';let msgId=10;
++const event=(uid=321,at=null,text='hello',quote=false)=>({user_id:uid,self_id:999,message_id:++msgId,message:[{type:'text',data:{text}},...(at?[{type:'at',data:{qq:at}}]:[]),...(quote?[{type:'reply',data:{id:'100'}}]:[])],sender:{nickname:'fixture'}});
++{
++ const h=await make();try{
++  h.applyReplyMode('silent');eq(h.shouldBlockSilentReply(pk),false);eq(h.shouldBlockSilentReply(key),true);eq(h.groupWakeAllowed(key,'ownerAtMention'),false);
++  await h.handleIncoming('group',456,event(123,'999'),h.cfg);eq(h.calls.prompts.length,0);eq(h.getSocialV2State(key).unread.length,0,'off owner mention not queued or buffered');
++  await h.sendWakePromptV2(key,'ownerAtMention');eq(h.calls.prompts.length,0);
++  await h.sendWakePromptV2(pk,'private');eq(h.calls.prompts.length,1,'owner private still works');
++ }finally{await h.close();}
++}
++{
++ const h=await make();try{
++  const st=h.getSocialV2State(key);
++  for(const e of [event(321,'999'),event(321,null,'Sagiri'),event(123,null,'Sagiri'),event(321,null,'ambient')])await h.handleIncoming('group',456,e,h.cfg);
++  eq(st.unread.length,0,'blocked calls are not retained as deferred replies');eq(h.calls.prompts.length,0);
++  for(const reason of ['atMention','quoteReply','nameMention','groupFollowup','probability','proactiveCheck','timeout','bootstrap','admin']){await h.sendWakePromptV2(key,reason);eq(h.calls.prompts.length,0,reason+' blocked at peak');}
++  await h.handleIncoming('group',456,event(123,'999'),h.cfg);await new Promise(r=>setTimeout(r,1250));eq(h.calls.prompts.length,1,'owner real @ wakes');
++  await h.sendToQQ(key,'owner response');const expires=h.groupWindows.get(key).expiresAt;now+=1000;
++  await h.handleIncoming('group',456,event(321,'999'),h.cfg);await h.handleIncoming('group',456,event(123,null,'followup without @'),h.cfg);
++  eq(h.groupWindows.get(key).expiresAt,expires,'blocked followups cannot extend conversation');eq(st.unread.length,1);eq(h.calls.sent.length,1);
++ }finally{await h.close();}
++}
++{
++ now=Date.parse('2026-10-27T19:00:00+08:00');const h=await make();try{
++  const st=h.getSocialV2State(key),name=event(321,null,'Sagiri');eq(h.evaluateWakeTriggerV2(key,st,name,'group','Sagiri','Sagiri',false),'nameMention');
++  h.cfg.groupPolicy={offPeak:{textWake:false}};eq(h.evaluateWakeTriggerV2(key,st,name,'group','Sagiri','Sagiri',false),null,'text switch cannot be bypassed by sampling');
++  eq(h.evaluateWakeTriggerV2(key,st,event(),'group','hello','hello',false),'probability');
++  h.cfg.groupPolicy.offPeak.ambientSampling=false;eq(h.evaluateWakeTriggerV2(key,st,event(),'group','hello','hello',false),null);eq(h.groupMessageAdmitted(key,event(),'hello',false),true,'idle reader may buffer context without model call');
++  h.cfg.groupPolicy.offPeak.idleProactive=false;eq(h.groupMessageAdmitted(key,event(),'hello',false),false);
++ }finally{await h.close();}
++}
++{
++ now=Date.parse('2026-10-27T08:59:59+08:00');const h=await make();try{
++  await h.ensureSession(pk);const privateId=h.state.sessions[pk];await h.deliverPrompt(key,'',{wakeReason:'atMention@seq1'});const old=h.state.sessions[key],token=h.getSocialV2State(key).agentToken,guard=h.captureSendGuard(key);now+=1001;assert.throws(guard);count++;h.reconcileGroupRestrictions();eq(h.state.sessions[key],undefined);ok(h.calls.cancelled.includes(old));ok(h.getSocialV2State(key).agentToken!==token);eq(h.state.sessions[pk],privateId);
++ }finally{await h.close();}
++}
++{
++ now=Date.parse('2026-10-27T08:59:59+08:00');const h=await make();try{
++  await h.deliverPrompt(key,'',{wakeReason:'ownerAtMention@seq1'});const guard=h.captureSendGuard(key);now+=1001;guard();h.reconcileGroupRestrictions();ok(h.state.sessions[key],'owner @ remains allowed across peak transition');
++ }finally{await h.close();}
++}
++console.log('PASS unified policy core checks:',count);
+--- /dev/null
++++ b/scripts/test-unified-controls-api.mjs
+@@ -0,0 +1,21 @@
++import assert from 'node:assert/strict';import fs from 'node:fs';import {bridgeHarness} from './audit-bridge-harness.mjs';import {mergeGroupPolicy} from '../src/group-policy.js';
++let checks=0;const eq=(a,b,m)=>{assert.equal(a,b,m);checks++;};const ok=(a,m)=>{assert.ok(a,m);checks++;};
++const h=await bridgeHarness({config:{autonomySchedule:{enabled:true,peakWindows:[['09:00','12:00'],['14:00','18:00']],peakWeekdays:[1,2,3,4,5],holidays:['2026-10-01'],verifiedHolidayYears:[2026]},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true,conversationIdleMs:90000,autonomousCooldownMs:120000,sampleProbability:.05},proactive:{enabled:true,checkIntervalMinMs:1800000,checkIntervalMaxMs:5400000,idleThresholdMs:900000,probability:.3}}}});h.setMode('reserved2');const server=h.startConsoleServer();
++try{
++ if(!server.listening)await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
++ const req=async(body,token='fixture-console-token')=>{const r=await fetch(base+'/api/control-settings',{method:body?'POST':'GET',headers:{'content-type':'application/json','x-console-token':token},body:body?JSON.stringify(body):undefined});return {status:r.status,...await r.json()};};
++ let r=await req();eq(r.status,200);eq(r.groupChatEnabled,true);eq(r.groupPolicy.peak.ownerAtMention,true);eq(r.groupPolicy.peak.memberAtMention,false);eq(r.groupPolicy.offPeak.memberAtMention,true);eq(r.deferredReplies.supported,false);
++ const original=fs.readFileSync(h.temp+'/config.json','utf8');
++ for(const bad of [{groupPolicy:{peak:{textWake:1}}},{groupChatEnabled:'false'},{groupPolicy:{foo:{}}},{proactive:{checkIntervalMinMs:5400001,checkIntervalMaxMs:1800000}},{proactive:{probability:2}},{groupChatEnabled:false,replyToOthersEnabled:true}]){r=await req(bad);eq(r.status,400);eq(fs.readFileSync(h.temp+'/config.json','utf8'),original,'invalid body is atomic');}
++ await h.ensureSession('private:123');const ownerId=h.state.sessions['private:123'];await h.deliverPrompt('group:456','',{wakeReason:'ownerAtMention'});const oldId=h.state.sessions['group:456'],token=h.getSocialV2State('group:456').agentToken;
++ r=await req({groupPolicy:{peak:{textWake:true},offPeak:{memberAtMention:false}}});eq(r.status,200);eq(h.cfg.groupPolicy.peak.textWake,true);eq(h.cfg.groupPolicy.offPeak.memberAtMention,false);eq(h.cfg.groupPolicy.offPeak.idleProactive,true);eq(h.state.sessions['private:123'],ownerId);eq(h.state.sessions['group:456'],undefined);ok(h.calls.cancelled.includes(oldId));ok(h.getSocialV2State('group:456').agentToken!==token);eq(h.cfg.socialV2.groupObserver.conversationIdleMs,90000);eq(h.cfg.autonomySchedule.holidays[0],'2026-10-01');
++ r=await req({groupChatEnabled:false});eq(r.groupChatEnabled,false);eq(r.replyToOthersEnabled,false);eq(h.shouldBlockSilentReply('group:456'),true);eq(h.shouldBlockSilentReply('private:123'),false);
++ r=await req({groupPolicy:{peak:{memberAtMention:true}}});eq(r.groupChatEnabled,false,'editing matrix never enables master');eq(h.groupWakeAllowed('group:456','ownerAtMention'),false);
++ r=await req({replyToOthersEnabled:true});eq(r.groupChatEnabled,true,'legacy alias maps to same switch');
++ r=await req({proactive:{checkIntervalMinMs:2400000,checkIntervalMaxMs:4800000,probability:.2}});eq(r.status,200);eq(h.cfg.socialV2.proactive.checkIntervalMinMs,2400000);eq(h.cfg.socialV2.proactive.idleThresholdMs,900000);eq(h.cfg.socialV2.proactive.enabled,true);
++ r=await req({groupPolicy:mergeGroupPolicy(),groupChatEnabled:false});eq(r.status,200);eq(r.groupPolicy.peak.textWake,false);eq(r.groupPolicy.offPeak.memberAtMention,true);
++ const st=h.getSocialV2State('group:456');r=await req({groupChatEnabled:true},st.agentToken);eq(r.status,401);eq((await req()).groupChatEnabled,false);
++ const unauthorized=await fetch(base+'/api/control-settings');eq(unauthorized.status,401);
++ const status=await fetch(base+'/api/status',{headers:{'x-console-token':'fixture-console-token'}});const value=await status.json();eq(value.effectiveGroupPolicy.enabled,false);
++}finally{await new Promise(r=>server.close(r));await h.close();}
++console.log('PASS unified controls API checks:',checks);

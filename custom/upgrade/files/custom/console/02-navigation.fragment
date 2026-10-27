@@ -1,0 +1,5 @@
+      <button data-view="persona" class="nav-item"><span class="nav-icon" aria-hidden="true">◉</span>人格与角色</button>
+      <div class="nav-label">聊天行为</div>
+      <button data-view="controls" class="nav-item"><span class="nav-icon" aria-hidden="true">⏻</span>开关控制</button>
+      <button data-view="social-v2" class="nav-item"><span class="nav-icon" aria-hidden="true">◈</span>二代仿真<span class="nav-note">V2</span></button>
+      <button data-view="social-v1" class="nav-item"><span class="nav-icon" aria-hidden="true">◇</span>一代仿真<span class="nav-note">V1</span></button>

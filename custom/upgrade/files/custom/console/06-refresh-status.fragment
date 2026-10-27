@@ -1,0 +1,16 @@
+  try {
+    const s = await api('/api/status');
+    const timing = s.autonomySchedule;
+    if(s.groupMasterSchedule)renderMasterScheduleStatus(s.groupMasterSchedule,s.masterScheduleState??{});
+    if(s.effectiveGroupPolicy) renderGroupPolicyStatus({groupChatEnabled:s.roleMode!=='silent',effectiveGroupPolicy:s.effectiveGroupPolicy});
+    const timingEl = document.getElementById('autonomyScheduleStatus');
+    if (timingEl) timingEl.textContent = timing?.enabled ? (timing.allowed ? '当前闲时：使用闲时群聊规则。' : '当前高峰：使用高峰群聊规则。') + '规则与时间表见开关控制页。' : '峰谷分段已关闭：全天使用闲时规则。';
+
+    document.querySelectorAll('#modeRow button').forEach(b => (b.classList.toggle('active', b.dataset.mode === s.mode), b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode))));
+    document.getElementById('roleText').textContent = s.role || '无';
+    document.getElementById('roleModeText').textContent = s.roleMode === 'silent' ? '仅主人私聊' : '群聊开启';
+    document.getElementById('replySwitchStatus').textContent = s.roleMode === 'silent' ? '群聊已关闭：仅保留主人私聊，群里主人艾特也不回' : '群聊已开启：按高峰／闲时规则响应';
+    document.getElementById('silentOn').disabled = s.roleMode === 'silent';
+    document.getElementById('silentOff').disabled = s.roleMode !== 'silent';
+    const modeLabel = s.mode === 'reserved' ? '一代仿真模式' : s.mode === 'reserved2' ? '二代仿真模式' : s.mode === 'closed-agent' ? '封闭 Agent' : '聊天模式';
+    updateOverview(s, modeLabel);

@@ -1,0 +1,48 @@
+--- a/src/bridge.js
++++ b/src/bridge.js
+@@ -3255,7 +3255,26 @@
+       // 配置里那个 0 不是请求里的 Host 端口。请求必然发生在 listen 之后，所以这里拿得到。
+       const boundPort = server.address()?.port ?? port;
+       const allowedHosts = [`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`];
+-      if (!allowedHosts.includes(hostHeader.toLowerCase())) {
++      // Explicit LAN gateway: backend stays loopback-only; gateway key is separate from console token.
++      const gatewayOrigin = process.env.QQ_BRIDGE_CONSOLE_ORIGIN || '';
++      const gatewayKey = process.env.QQ_BRIDGE_GATEWAY_KEY || '';
++      const gatewayKeySupplied = String(req.headers['x-qq-gateway-key'] || '');
++      const gatewayKeyMatches = gatewayKey.length >= 32
++        && Buffer.byteLength(gatewayKey) === Buffer.byteLength(gatewayKeySupplied)
++        && crypto.timingSafeEqual(Buffer.from(gatewayKey), Buffer.from(gatewayKeySupplied));
++      let gatewayHost = '';
++      try {
++        const configured = new URL(gatewayOrigin);
++        if (configured.protocol === 'https:' && configured.origin === gatewayOrigin) gatewayHost = configured.host;
++      } catch {}
++      const fromLoopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
++      const gatewayRequest = Boolean(gatewayHost && hostHeader === gatewayHost && fromLoopback && gatewayKeyMatches);
++      if (gatewayRequest && ((req.headers.origin && req.headers.origin !== gatewayOrigin)
++          || (req.method !== 'GET' && req.method !== 'HEAD' && req.headers.origin !== gatewayOrigin))) {
++        sendJson({ ok: false, error: '跨站请求被拒绝' }, 403);
++        return;
++      }
++      if (!allowedHosts.includes(hostHeader.toLowerCase()) && !gatewayRequest) {
+         sendJson({ ok: false, error: `Host 头不被允许（${hostHeader || '缺失'}）：控制台只接受本机回环访问` }, 403);
+         return;
+       }
+@@ -3270,7 +3289,7 @@
+         if (a.length !== b.length) return false;
+         return crypto.timingSafeEqual(a, b);
+       })();
+-      if (consoleToken && !tokenMatches) {
++      if (consoleToken && !tokenMatches && !gatewayRequest) {
+         if (req.method === 'GET' && url.pathname === '/') {
+           res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS });
+           res.end('<!doctype html><meta charset="utf-8"><title>需要令牌</title><script>const t=prompt(\'请输入控制台访问令牌\');if(t)location.href=\'/?token=\'+encodeURIComponent(t);</script>');
+@@ -3328,7 +3347,7 @@
+         if (origin) {
+           let originHost = '';
+           try { originHost = new URL(String(origin)).host; } catch {}
+-          if (![`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`].includes(originHost)) {
++          if (!gatewayRequest && ![`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`].includes(originHost)) {
+             sendJson({ ok: false, error: '跨站请求被拒绝' }, 403);
+             return;
+           }

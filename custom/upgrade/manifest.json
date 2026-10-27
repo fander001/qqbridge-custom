@@ -1,0 +1,526 @@
+{
+  "format": 1,
+  "bundleId": "45c483044cf3a1619db7",
+  "upstream": {
+    "repository": "https://github.com/Derpyu520/qq-bridge",
+    "commit": "a49877f4e58d04e47532d44b803360d0f001160d",
+    "version": "0.2.1-r1"
+  },
+  "patchSha256": "3c419d3c62b493b569a6729d2af45e98f19431351856b9eb2251a9ede7d37d0f",
+  "patchedFiles": [
+    {
+      "path": ".gitignore",
+      "beforeSha256": "9cb2c727c1cea955952bf8bd0f1a065a90e77df444355e4e140ece796690e929",
+      "afterSha256": "7d9bcbe481e8eed7655d0737122a97ddb01cc57a716a458ed3722694fea1c75d"
+    },
+    {
+      "path": "dsh/agent-presets/qq-chat-v2/agent.cordis.yml",
+      "beforeSha256": "ded3b2757f1767102d3c811e4a1b33ca77593d37418b58675e4a2f61c399b625",
+      "afterSha256": "9e07d991d916f607a2ec8a1a490036cd0437b3eb526cfd960e64f0a655b99028"
+    },
+    {
+      "path": "scripts/audit-bridge-harness.mjs",
+      "beforeSha256": "f39819c043bfee9f9930334a323b7ac452c58f69c92b62dad2c26e994f6c4d9d",
+      "afterSha256": "5381bbe72f595bc0efd1cefd867dda7b4a97674b8979f02a1acb8fe0f239b61b"
+    },
+    {
+      "path": "scripts/console-ui-fixture.mjs",
+      "beforeSha256": "57c01a67146048d1185d83220d6238c8ecbd0aad91b6ef472da99c871d87b90e",
+      "afterSha256": "9f17e9c46b3d77cd4d7c0ac4c73f3d73ff8d5541f6ea28a30deedfaf947049b3"
+    },
+    {
+      "path": "scripts/test-audit-regressions.mjs",
+      "beforeSha256": "0a1b9d67f2d64e628cc98585150d7150bcb5e37d9f7c68f0624d501050e368ad",
+      "afterSha256": "65956a98721d54ed813ff564bc823481688984ce9c8b97eb3ba213482c3bcc1f"
+    },
+    {
+      "path": "scripts/test-console-static.mjs",
+      "beforeSha256": "f341f29714fc3e4738c10d16901c445b03647e343dec64a4a9f80c9f6e05983d",
+      "afterSha256": "64a203295ba53891a2d09bcef2c3254190320a6e3c9a8158a6cf49e73f526c13"
+    },
+    {
+      "path": "scripts/test-qq-preset-contract.mjs",
+      "beforeSha256": "8dd353233541ede82ee587ac1c84685c131f7ef5a284f91d1f358686818532ab",
+      "afterSha256": "f41cef02ae6bdd7cb95e8fec754448792f2b3d9562b1ebcd980df2ad3b377707"
+    },
+    {
+      "path": "scripts/test-snowluma-upstream-health.mjs",
+      "beforeSha256": "813b784e0eb5904c94080efaf5a5ceff73605c75b1a88a00f55644f703c29c29",
+      "afterSha256": "6959364ca545a9d2411cb963f4501e938ac9a775cfb9e44831d12f3f5b52e6f7"
+    },
+    {
+      "path": "scripts/test-voice.mjs",
+      "beforeSha256": "b4ea3f8da694261afd8b2c7e97a7d314c291c987a072f2b772b85473236aef81",
+      "afterSha256": "5528e83c827417fd3c3ffe6f60d0f1ab835e4d7c3fb726a58632e53c031bb188"
+    },
+    {
+      "path": "src/bridge.js",
+      "beforeSha256": "021f2e986fa62e724ea0ccf03b627a872413032f31d48166ef6cd8a6779d1ffa",
+      "afterSha256": "bee5300a0dfd4cb2ca1fc737331d949c6bb7e02dc2572443ba68dfd39f4e11bd"
+    }
+  ],
+  "overlays": [
+    {
+      "path": ".gitattributes",
+      "sha256": "2242829f23a9567d4f938258331ddbf35ce5f7885290480e6191e37a165b3038",
+      "bytes": 249
+    },
+    {
+      "path": "NOTICE",
+      "sha256": "945de85e90481de2acf3f988ee9843fd8686ecbf08a4da1359d1059202e18b6f",
+      "bytes": 1357
+    },
+    {
+      "path": "PROVENANCE.json",
+      "sha256": "2e2056e4f0e566684ba353fdeab46be12ca3ad8851a7fe618fb0504715562891",
+      "bytes": 1645
+    },
+    {
+      "path": "PUBLICATION.md",
+      "sha256": "cff711d2564689fc4776e8fd27c1898d4dabb801d4f1260aadb815a0416cdfb8",
+      "bytes": 750
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "d799f539c6f2055544d4c0f6cfbc13bcf8eb8887872cf059dac06c5688bff150",
+      "bytes": 3291
+    },
+    {
+      "path": "custom/README.md",
+      "sha256": "f667edc7044e468c4a7b5fc42e7f4e2e3db674b7825a0857dc6fca2862cf72f4",
+      "bytes": 1765
+    },
+    {
+      "path": "custom/console/01-master-order.fragment",
+      "sha256": "8a2e9026660cab58e4518618677fde93dec8a110c2138cd80c1cef862950694e",
+      "bytes": 218
+    },
+    {
+      "path": "custom/console/02-navigation.fragment",
+      "sha256": "71e6d9fa0e00e672b60e937dea1bad02eac9e74f8c39f45bba7634dc562e1aa3",
+      "bytes": 620
+    },
+    {
+      "path": "custom/console/03-status.fragment",
+      "sha256": "07aa6042a3f0afa8d176f90c7d2713121fdd6aa0f794873083848a772a8d061f",
+      "bytes": 408
+    },
+    {
+      "path": "custom/console/04-relocate-proactive.fragment",
+      "sha256": "f9e468b7e5aee08d8d95705950efe05d3f92684cdf42e6f11632847546587bf1",
+      "bytes": 183
+    },
+    {
+      "path": "custom/console/05-control-panels.fragment",
+      "sha256": "03bc5943beb4e9a9655846801e88025f22c9aa2fa274d7005f89dcfd2e5f00a6",
+      "bytes": 13594
+    },
+    {
+      "path": "custom/console/06-refresh-status.fragment",
+      "sha256": "5ad24f1d97bb4ed75f9e244250a07b92945e8d2d8463303f8740e8a2f75ef79d",
+      "bytes": 1639
+    },
+    {
+      "path": "custom/console/07-master-switch.fragment",
+      "sha256": "3237ba4015dbd4be3f890c0119f3f12a640d38d12eef2d301deb2d99e15de83b",
+      "bytes": 1043
+    },
+    {
+      "path": "custom/console/08-load-controls.fragment",
+      "sha256": "f9591c3b3fc46749bcaa25efafef5bd36321cb6a274bfc7bae6ca6ec5213510a",
+      "bytes": 298
+    },
+    {
+      "path": "custom/console/09-page-metadata.fragment",
+      "sha256": "7c557c81be12371f759f17fe6997af499d81995c44fdcb648b00185fefbfb9c8",
+      "bytes": 614
+    },
+    {
+      "path": "custom/console/10-control-bindings.fragment",
+      "sha256": "4a9cd4789bf016113d3564f3679deb6b4575a0197d01a653b79d4ee31817c24d",
+      "bytes": 7745
+    },
+    {
+      "path": "custom/console/patches.json",
+      "sha256": "52c185ac747c3188285ac271ca787ac6f2a576f36e32898e7f0c5771301e36de",
+      "bytes": 5891
+    },
+    {
+      "path": "custom/console/render.js",
+      "sha256": "9eac395199fbcd2cc44e9db93d3fb47feae1a4eb5e3413960abf3ba7a48cf71c",
+      "bytes": 957
+    },
+    {
+      "path": "custom/policy/autonomy-schedule.js",
+      "sha256": "d396b32f8d6dccfd825880638d98f635536c5c2848b80c3a68a79387914c83a2",
+      "bytes": 1979
+    },
+    {
+      "path": "custom/policy/console-controls.js",
+      "sha256": "addb45e6702558dce14a5cdd3246247cef5b9bf60e979c69c118134811d9c08a",
+      "bytes": 4064
+    },
+    {
+      "path": "custom/policy/group-master-schedule.js",
+      "sha256": "bb243f3d49a79d44cbb1aa7e47ed9cdcc141fb19b6215dd5fba8b604ee8fbac4",
+      "bytes": 2048
+    },
+    {
+      "path": "custom/policy/group-policy.js",
+      "sha256": "11ab84c200b8c03ff370c999cbc9e95b29b7a0e5145b40bef5397c32cfde6213",
+      "bytes": 1905
+    },
+    {
+      "path": "custom/runtime/console-gateway.js",
+      "sha256": "2e25c28831283b44e6b250f56e122267b4bd2e893ebd9b143c41c34a80ade613",
+      "bytes": 1384
+    },
+    {
+      "path": "custom/runtime/control-settings.js",
+      "sha256": "d1100c7357fe2ddd4649b3b0da6bfa7e0ab563a8ac6061365e444def6c1459d1",
+      "bytes": 4992
+    },
+    {
+      "path": "custom/runtime/group-chat.js",
+      "sha256": "db008bb6f528384bb59b5c94bb6aef93b1faf8ad28abcc8d7593960dd0206f1c",
+      "bytes": 27245
+    },
+    {
+      "path": "custom/runtime/preset-sync.js",
+      "sha256": "4dd93eafe6579344ccfe2e85d191a70d2df8f81eefaa757c90ba85bac91c9060",
+      "bytes": 975
+    },
+    {
+      "path": "custom/upgrade-readme.md",
+      "sha256": "542d74a72fca3855fb7c8fa92c79f20e3f09f3938c7accb310f936472e917420",
+      "bytes": 1188
+    },
+    {
+      "path": "custom/upgrade-runner.mjs",
+      "sha256": "79f599e2cf02fa516e8b8d8b46ca9f72a9f6f79c283e1e319aa934edbdb9929a",
+      "bytes": 9531
+    },
+    {
+      "path": "docs/BACKUP_AND_RESTORE.md",
+      "sha256": "9383e3c0fb47859509e651bc58e8dc1ef57928b790b4edcccc4cc3f5c112eb4f",
+      "bytes": 712
+    },
+    {
+      "path": "docs/CUSTOMIZATIONS.md",
+      "sha256": "d405093bd28e52730d053f33c7bb1dff7a8dbe24dfb8ba98db0dbc50520c6199",
+      "bytes": 4792
+    },
+    {
+      "path": "docs/UPSTREAM_UPGRADE.md",
+      "sha256": "46cad8878e534a4c770ba6c510446e4f54e96fb92597c8b744a071c08a4a8c50",
+      "bytes": 4424
+    },
+    {
+      "path": "docs/upstream/.gitignore",
+      "sha256": "9cb2c727c1cea955952bf8bd0f1a065a90e77df444355e4e140ece796690e929",
+      "bytes": 2631
+    },
+    {
+      "path": "docs/upstream/LICENSE",
+      "sha256": "4f6e6af70a3c1cfc06ad3c9fe09abfb142d02d99abae28b0b22128b7a2d90e39",
+      "bytes": 12934
+    },
+    {
+      "path": "docs/upstream/README.en.md",
+      "sha256": "41ea499917cf333b92ce74c85dc240cd0c69d754911ffbe6fc0a8aa87bcd2bd3",
+      "bytes": 11825
+    },
+    {
+      "path": "docs/upstream/README.md",
+      "sha256": "c6d590ee63a512a6742cae1359b9b46c9e48f5d2ec6e0d69cd3ae8e9d76307c2",
+      "bytes": 33745
+    },
+    {
+      "path": "docs/upstream/config.example.json",
+      "sha256": "e1346f09b2d4f4bef32c316616a0486867f0233065d26044fad6af5fcee87435",
+      "bytes": 7449
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/LICENSE",
+      "sha256": "9b7682c1ab737bb70b3494bad5b7f54d33872c8f95a7d6aef0fdcfec7e0fd792",
+      "bytes": 1089
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/README.md",
+      "sha256": "b35c5ec839642618b2884c96a2feec74bfd185f416c2b1e610fb4eef956a3202",
+      "bytes": 3732
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/README.zh.md",
+      "sha256": "f2e60c654ce0f39dc063c1a0b0b53a643031a7437843957cec7e50ed0403ae45",
+      "bytes": 3668
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/client.js",
+      "sha256": "b39c636d7846be9988cd62a737a6f6a637abf16bbd43e9795296d9eaa0e58705",
+      "bytes": 7401
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/cordis.patch.yml",
+      "sha256": "9b6ba87410f66483031fa19fe8808638c89b4ab456cbe5fbc1c96d888598a7fe",
+      "bytes": 269
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/index.js",
+      "sha256": "cf8b3d3a2be584bffabb85f2331800358029dcfcf396627e016e72930af311e1",
+      "bytes": 4142
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/local-compat.patch",
+      "sha256": "db27ceec7a40505fa4e1ae2451afd690f43fe9cb4f86e3518b15fa4387a724a0",
+      "bytes": 326
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/package.json",
+      "sha256": "a31f84fbbb09c20912e7de86f0286024a2ce6c9d6a078df19e70d91e03e1721f",
+      "bytes": 1663
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/relaunch.js",
+      "sha256": "f288f4093b582569b1e8394e744753b8a9e2aac4a778df89d19fbb0605a4091c",
+      "bytes": 2453
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/test-local-compat.mjs",
+      "sha256": "64fc9da2a9a5103b87e013f924a3724ed1b8f7a45812c94857c3c94838d55112",
+      "bytes": 1327
+    },
+    {
+      "path": "integrations/dsh/dsh-setting-restart/typert.host.js",
+      "sha256": "424bef41ededdd263fb50189a9bdf99e55a151eb0f5f9b32e1e597c7f429bcbc",
+      "bytes": 2591
+    },
+    {
+      "path": "integrations/dsh/qq-agent-presets/package.json",
+      "sha256": "7bde5649dbe5f9ca1314043090520293aa655caa81691f06cfdad404135d3ab8",
+      "bytes": 472
+    },
+    {
+      "path": "integrations/dsh/qq-agent-presets/presets/qq-chat-v2.patch.yml",
+      "sha256": "a6a4b69339a6f2902f6edb8f6dbba993b115adc1d0ccf1b253c01983b8faf867",
+      "bytes": 24690
+    },
+    {
+      "path": "integrations/dsh/qq-agent-presets/presets/qq-chat.patch.yml",
+      "sha256": "f90d85d4df020859e781a0ba79b02a4082956737b290ba59b5594ab7943de9d6",
+      "bytes": 6759
+    },
+    {
+      "path": "integrations/dsh/qq-agent-presets/qq-tool-restrict.mjs",
+      "sha256": "a718b0938dec5c6cca8e874eb2f88cc3b4626ca943a8646bbd04f2a04503ea8a",
+      "bytes": 19058
+    },
+    {
+      "path": "integrations/dsh/qq-mode-console/cordis.patch.yml",
+      "sha256": "cbe8f4b2a241db7af9d85cd4041c38b188bfbd64a51288641a8b31189ab715f8",
+      "bytes": 668
+    },
+    {
+      "path": "integrations/dsh/qq-mode-console/lib/index.js",
+      "sha256": "3c6cd7b67a43510685231a0da4d4ac7bb78836380ca9268a3651a2e68c2f22ec",
+      "bytes": 7238
+    },
+    {
+      "path": "integrations/dsh/qq-mode-console/package.json",
+      "sha256": "c17256cf209e88c3b67b9c48642eef7792a61f7e81ea5a299302fb045a5ea983",
+      "bytes": 387
+    },
+    {
+      "path": "patches/console-controls-20261026.patch",
+      "sha256": "b08d09655281d82f0913843338ccbb5233e9a2290988cf3b64ced24c524d0933",
+      "bytes": 83665
+    },
+    {
+      "path": "patches/deepseek-json-retry.patch.yml",
+      "sha256": "546f3b8bf226fd571f15f0283035728103dca55f9a87a33e014ffb148c67deb7",
+      "bytes": 744
+    },
+    {
+      "path": "patches/group-continuous90.patch",
+      "sha256": "73e820983792ead71694282ba5cec8838f6d21551c27f7ffd89eaf38da3f0d34",
+      "bytes": 90142
+    },
+    {
+      "path": "patches/group-master-schedule-20261027.patch",
+      "sha256": "f1ad7c20b9b7f4dbf476f1ccca4f60b191650b5dfa0661c385b0d2b7c57f5d40",
+      "bytes": 39355
+    },
+    {
+      "path": "patches/group-observer.patch",
+      "sha256": "39583ddd7e1c9b09782e5f74fa2eace9a97db8b1d11e4d001c9205bed103da30",
+      "bytes": 36627
+    },
+    {
+      "path": "patches/group-participation.patch",
+      "sha256": "6a9231627e8eeb9088e0a3de22ced29aee752d428264915e83bcea1740e5cb05",
+      "bytes": 63508
+    },
+    {
+      "path": "patches/json-recovery-and-preset-sync.patch",
+      "sha256": "5b6cf83e414f80f0ce2a20989ffbba71b80ce314fa08a742a47ca9ce039621c2",
+      "bytes": 23174
+    },
+    {
+      "path": "patches/lan-console.patch",
+      "sha256": "4014a259790f538d6e14c0177e455ad4feebdb406cd90de1fa26e84ec495c924",
+      "bytes": 3082
+    },
+    {
+      "path": "patches/offpeak-autonomy.patch",
+      "sha256": "56d6917283ba830f376954307a36811003e3fe4ad9a2d96699f479738eec0378",
+      "bytes": 19517
+    },
+    {
+      "path": "patches/qq-chat-v2-group-staged.patch.yml",
+      "sha256": "93d4e2f92a41fef89233c26d6ba638c68faf6d79d43fd4dfa2073e1d037715c0",
+      "bytes": 23841
+    },
+    {
+      "path": "patches/unified-switches-20261027.patch",
+      "sha256": "01c052d2e8a042a8fb670e866952079bf432d9db513bf61fa4b8af48e7399f24",
+      "bytes": 84371
+    },
+    {
+      "path": "scripts/apply-console-controls.py",
+      "sha256": "a978e488f689b0c856ff9d86e0af8bf5aeaafd2b330a3c9f0a1aa185d0df1f2c",
+      "bytes": 8129
+    },
+    {
+      "path": "scripts/apply-console-ui.py",
+      "sha256": "64cc6d2809a5275b48b851bba1827c2b3afc8f68943dd2073a80dc8ee5ce3b8c",
+      "bytes": 10244
+    },
+    {
+      "path": "scripts/build-custom-upgrade.mjs",
+      "sha256": "dc1e0a3dfc7d765561b2987948bd1648b1ea60e6d31367633d00ade20a4534c8",
+      "bytes": 4283
+    },
+    {
+      "path": "scripts/continuous90-sections.json",
+      "sha256": "46e92c23b5d23733e7db3ccd291b8d3fc6de52c8d6f8ad03c602cdaa4b5db023",
+      "bytes": 3655
+    },
+    {
+      "path": "scripts/test-autonomy-schedule.mjs",
+      "sha256": "d8796958cc58577b44b3495997fbdd55b544f369b1a30c9e1c5a6b3c4d2fd6f7",
+      "bytes": 4775
+    },
+    {
+      "path": "scripts/test-console-controls-ui.mjs",
+      "sha256": "ef5f546465a0318c24c2b5d186f8a9967aa276daea589ea39e9ee8152b404cab",
+      "bytes": 5473
+    },
+    {
+      "path": "scripts/test-console-controls.mjs",
+      "sha256": "3772eb2dd773596337fe8dfe40a3f922f67a497e7e0405449a28ed195e165974",
+      "bytes": 5169
+    },
+    {
+      "path": "scripts/test-custom-modules.mjs",
+      "sha256": "8c44a8858985d4da04dbffda06f8fefdef6c0a622e5950f0cc3e3002bbdc9851",
+      "bytes": 3658
+    },
+    {
+      "path": "scripts/test-custom-regression.mjs",
+      "sha256": "61890a10240dc5e235cf59883cea90a6188778be2ec3bd7124a4b6a657c53c0c",
+      "bytes": 1438
+    },
+    {
+      "path": "scripts/test-custom-upgrade.mjs",
+      "sha256": "8edec5f56242960303748f2687bc7965a97a3ba816ae2017effc4c8ed7ac0f64",
+      "bytes": 5714
+    },
+    {
+      "path": "scripts/test-group-continuous90.mjs",
+      "sha256": "d6fbdbd878e4d15fb74ee11a0017808a754dd911e744f9f5355244b5f63af5bc",
+      "bytes": 10592
+    },
+    {
+      "path": "scripts/test-group-master-schedule.mjs",
+      "sha256": "a5ddf95032233415801a54fae30ef1114c2ae83df429cb80e6ecc8e67228badc",
+      "bytes": 3114
+    },
+    {
+      "path": "scripts/test-group-observer.mjs",
+      "sha256": "6f7f42b6d0650326b9fd4ac71ee39b7e481a313bad60679ad5b9405148801cf3",
+      "bytes": 8612
+    },
+    {
+      "path": "scripts/test-group-participation.mjs",
+      "sha256": "a0c63259616fa18cd53da596fbeb2ba4b8a824131ef6f8da0b8fa777ca0a0dca",
+      "bytes": 5174
+    },
+    {
+      "path": "scripts/test-installed-preset-sync.mjs",
+      "sha256": "f6847235b35670f3247e2e61bd0004f2b073465fa37601e7784e3d743dbb2c2c",
+      "bytes": 1969
+    },
+    {
+      "path": "scripts/test-json-recovery.mjs",
+      "sha256": "e366346325a10791083ef50bfe4ec60ce6fc577dadb2deee664648c208059a47",
+      "bytes": 4634
+    },
+    {
+      "path": "scripts/test-master-schedule-api.mjs",
+      "sha256": "5f8bebf43f0c4091ef310f7c3790967b935adabf7e6385c5bb7c7655752034ad",
+      "bytes": 4060
+    },
+    {
+      "path": "scripts/test-unified-controls-api.mjs",
+      "sha256": "779adffeacb6a3885d71d82b218aad424dbeedf21d544944a2491dae00a7ef23",
+      "bytes": 4152
+    },
+    {
+      "path": "scripts/test-unified-group-policy.mjs",
+      "sha256": "4d8ee62c651e0d534904ca90abeaef0cf61de0385d37d52bfc21fdc9edf34684",
+      "bytes": 5701
+    },
+    {
+      "path": "scripts/update-continuous90-preset.mjs",
+      "sha256": "98810ab9ebc6cc49ede8937342a0a49a56b5ccbc5c4e82e27a7f1977fa6d0070",
+      "bytes": 2455
+    },
+    {
+      "path": "scripts/update-json-guidance.mjs",
+      "sha256": "f9d51ef542265508f95a9c6f888164f12c038c6b7f69c8f5d70fceab244136fd",
+      "bytes": 1272
+    },
+    {
+      "path": "src/autonomy-schedule.js",
+      "sha256": "f88ce46f18b2a44ad67377e9fc56cc7a41e8cd7ea55b44806bd72e46fdacc42a",
+      "bytes": 106
+    },
+    {
+      "path": "src/console-controls.js",
+      "sha256": "8d035929c7eb29a4d5ec0b8e21e906632d2a25b741b0e968c9c23969de78da64",
+      "bytes": 105
+    },
+    {
+      "path": "src/group-master-schedule.js",
+      "sha256": "9acac69c5ac76553b1d267e4d4314e72b205c6857c9562a096d111c073326170",
+      "bytes": 110
+    },
+    {
+      "path": "src/group-policy.js",
+      "sha256": "413addc6f5d1495cb637a5f471633d084cb58601e5dc6df67684b6bb14e2e458",
+      "bytes": 101
+    }
+  ],
+  "excludedMutableFiles": [
+    "config.json",
+    "roles/",
+    "state/",
+    ".env*",
+    ".npmrc",
+    ".private/"
+  ],
+  "notes": [
+    "README.md and config.example.json are not overwritten by the upgrade installer.",
+    "Unknown upstream versions require a successful patch and console-anchor preflight, followed by regression tests."
+  ]
+}

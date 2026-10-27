@@ -1,0 +1,5 @@
+        <section id="section-mode" data-page="overview" class="card span-all">
+      <h2>运行模式</h2>
+      <p class="meta" id="autonomyScheduleStatus" role="status"></p>
+      <div class="mode-row" id="modeRow">
+        <button data-mode="chat" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>聊天模式</strong><small>白名单内，随时对话</small></button>

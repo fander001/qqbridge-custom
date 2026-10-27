@@ -1,0 +1,63 @@
+  });
+})();
+
+let masterScheduleManaged=false;
+function updateMasterScheduleForm(){const enabled=document.getElementById('masterScheduleEnabled').checked;document.getElementById('masterScheduleStart').required=enabled;document.getElementById('masterScheduleEnd').required=enabled;}
+function renderMasterScheduleStatus(config={},state={}){
+ masterScheduleManaged=config.enabled===true;
+ const on=document.getElementById('silentOff'),off=document.getElementById('silentOn');
+ on.textContent=masterScheduleManaged?'手动开启（停用定时）':'开启群聊';
+ off.textContent=masterScheduleManaged?'手动关闭（停用定时）':'关闭全部群聊';
+ const el=document.getElementById('masterScheduleStatus');
+ if(!masterScheduleManaged){el.textContent='定时未启用：总开关由你手动控制。';return;}
+ if(!state.valid){el.textContent='定时参数无效，群聊保持关闭；请修正开启与关闭时间。';return;}
+ let text='已启用：每天 '+config.start+' 开启，'+(state.crossMidnight?'次日 ':'')+config.end+' 关闭。当前应'+(state.shouldOpen?'开启':'关闭')+'群聊。';
+ if(state.nextTransitionAt){const at=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(state.nextTransitionAt));text+=' 下次：'+at+' '+(state.nextTransitionOpen?'开启':'关闭')+'（北京时间）。';}
+ el.textContent=text;
+}
+document.getElementById('masterScheduleEnabled').addEventListener('change',updateMasterScheduleForm);
+document.getElementById('masterScheduleForm').addEventListener('submit',e=>{e.preventDefault();void saveControlSection({groupMasterSchedule:{enabled:document.getElementById('masterScheduleEnabled').checked,start:document.getElementById('masterScheduleStart').value,end:document.getElementById('masterScheduleEnd').value}},'masterScheduleMsg');});
+const groupPolicyKeys=['ownerAtMention','memberAtMention','quoteReply','textWake','followup','ambientSampling','idleProactive'];
+function renderGroupPolicyStatus(r){
+ const el=document.getElementById('groupPolicyStatus');if(!el)return;
+ const state=r.effectiveGroupPolicy;const enabled=r.groupChatEnabled??state?.enabled;
+ if(!enabled){el.textContent='当前：群聊总开关关闭，仅保留主人私聊。勾选项可以提前调整保存。';return;}
+ const names={ownerAtMention:'主人艾特',memberAtMention:'群友艾特',quoteReply:'引用',textWake:'文字召唤',followup:'续聊',ambientSampling:'消息抽样',idleProactive:'冷场检查'};
+ const row=state?.current??{};el.textContent='当前为'+(state?.phase==='peak'?'高峰':'闲时')+'，允许：'+(groupPolicyKeys.filter(k=>row[k]).map(k=>names[k]).join('、')||'全部关闭')+'。';
+}
+const groupControlScales = {"conversationIdleMs": 1000, "autonomousCooldownMs": 1000, "sampleProbability": 0.01, "maxMessagesPerTurn": 1, "directWakeBatchMs": 1000, "ownerWakeBatchMs": 1000, "followupQuietMs": 1000, "maxTurnMs": 1000, "ownerMaxTurnMs": 1000, "closeAfterSendMs": 1000};
+
+async function loadConversationControls() {
+ try {
+  const r=await api('/api/control-settings');if(!r.ok) throw new Error(r.error);
+  const schedule=r.groupMasterSchedule??{};document.getElementById('masterScheduleEnabled').checked=schedule.enabled===true;document.getElementById('masterScheduleStart').value=schedule.start??'';document.getElementById('masterScheduleEnd').value=schedule.end??'';updateMasterScheduleForm();renderMasterScheduleStatus(schedule,r.masterScheduleState??{});
+  for(const [k,scale] of Object.entries(groupControlScales)) document.getElementById('gc-'+k).value=Number((r.groupObserver[k]/scale).toFixed(4));
+  for(const k of ['enabled','continuousReplies']) document.getElementById('gc-'+k).checked=r.groupObserver[k]===true;
+  updateGroupControls();
+  for(const phase of ['peak','offPeak'])for(const key of groupPolicyKeys)document.getElementById('gp-'+phase+'-'+key).checked=r.groupPolicy?.[phase]?.[key]===true;
+  renderGroupPolicyStatus(r);
+  const pc=r.proactive??{};document.getElementById('v2ProactiveEnabled').checked=pc.enabled!==false;
+  document.getElementById('v2ProactiveIntervalMin').value=(pc.checkIntervalMinMs??1800000)/60000;
+  document.getElementById('v2ProactiveIntervalMax').value=(pc.checkIntervalMaxMs??5400000)/60000;
+  document.getElementById('v2ProactiveIdleThreshold').value=(pc.idleThresholdMs??900000)/60000;
+  document.getElementById('v2ProactiveProbability').value=pc.probability??.3;
+
+  const sc=r.autonomySchedule;document.getElementById('sc-enabled').checked=sc.enabled===true;
+  for(let i=1;i<=7;i++) document.getElementById('sc-day-'+i).checked=(sc.peakWeekdays??[1,2,3,4,5]).includes(i);
+  const windows=sc.peakWindows??[['09:00','12:00'],['14:00','18:00']];
+  for(let i=0;i<2;i++){document.getElementById('sc-start-'+i).value=windows[i][0];document.getElementById('sc-end-'+i).value=windows[i][1];}
+  document.getElementById('scheduleCalendarInfo').textContent='节假日日历已核实年份：'+(sc.verifiedHolidayYears??[]).join(', ')+'。日历待更新的年份按普通工作日处理。';
+ } catch(e) {document.getElementById('groupControlsMsg').textContent=e.message;}
+}
+function updateGroupControls(){document.getElementById('gc-closeAfterSendMs').disabled=document.getElementById('gc-continuousReplies').checked;}
+document.getElementById('gc-continuousReplies').addEventListener('change',updateGroupControls);
+async function saveControlSection(body,id) {
+ const msg=document.getElementById(id);try {const r=await api('/api/control-settings','POST',body);if(!r.ok)throw new Error(r.error);msg.textContent='已保存并生效';msg.className='meta ok';await loadConversationControls();await refresh();}catch(e){msg.textContent='保存失败：'+e.message;msg.className='meta err';}
+}
+document.getElementById('groupControlsForm').addEventListener('submit',e=>{e.preventDefault();const g={};for(const [k,scale] of Object.entries(groupControlScales))g[k]=k==='sampleProbability'?Number(document.getElementById('gc-'+k).value)*scale:Math.round(Number(document.getElementById('gc-'+k).value)*scale);for(const k of ['enabled','continuousReplies'])g[k]=document.getElementById('gc-'+k).checked;void saveControlSection({groupObserver:g},'groupControlsMsg');});
+document.getElementById('scheduleControlsForm').addEventListener('submit',e=>{e.preventDefault();const sc={enabled:document.getElementById('sc-enabled').checked,peakWeekdays:[],peakWindows:[]};for(let i=1;i<=7;i++)if(document.getElementById('sc-day-'+i).checked)sc.peakWeekdays.push(i);for(let i=0;i<2;i++)sc.peakWindows.push([document.getElementById('sc-start-'+i).value,document.getElementById('sc-end-'+i).value]);void saveControlSection({autonomySchedule:sc},'scheduleControlsMsg');});
+document.getElementById('groupPolicyForm').addEventListener('submit',e=>{e.preventDefault();const policy={peak:{},offPeak:{}};for(const phase of ['peak','offPeak'])for(const key of groupPolicyKeys)policy[phase][key]=document.getElementById('gp-'+phase+'-'+key).checked;void saveControlSection({groupPolicy:policy},'groupPolicyMsg');});
+document.getElementById('proactiveControlsForm').addEventListener('submit',e=>{e.preventDefault();void saveControlSection({proactive:{enabled:document.getElementById('v2ProactiveEnabled').checked,checkIntervalMinMs:Math.round(Number(document.getElementById('v2ProactiveIntervalMin').value)*60000),checkIntervalMaxMs:Math.round(Number(document.getElementById('v2ProactiveIntervalMax').value)*60000),idleThresholdMs:Math.round(Number(document.getElementById('v2ProactiveIdleThreshold').value)*60000),probability:Number(document.getElementById('v2ProactiveProbability').value)}},'proactiveControlsMsg');});
+void loadConversationControls();
+</script>
+</body>

@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import {bridgeHarness} from './audit-bridge-harness.mjs';
+let now=Date.parse('2026-10-27T19:00:00+08:00');class Clock extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
+let count=0;const eq=(a,b,m)=>{assert.equal(a,b,m);count++;};
+const config={groupPolicy:{peak:{ownerAtMention:false},offPeak:{textWake:false}},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true}}};
+const h=await bridgeHarness({config,globals:{Date:Clock}});h.setMode('reserved2');const server=h.startConsoleServer();
+try{
+ eq(h.cfg.groupPolicy.peak.ownerAtMention,false,'saved period switches loaded on startup');eq(h.cfg.groupPolicy.offPeak.textWake,false);
+ if(!server.listening)await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
+ const req=async(body,token='fixture-console-token')=>{const r=await fetch(base+'/api/control-settings',{method:body?'POST':'GET',headers:{'content-type':'application/json','x-console-token':token},body:body?JSON.stringify(body):undefined});return {status:r.status,...await r.json()};};
+ let r=await req();eq(r.groupMasterSchedule.enabled,false);eq(r.groupMasterSchedule.start,'');eq(r.groupChatEnabled,true);
+ const original=fs.readFileSync(h.temp+'/config.json','utf8');for(const bad of [{groupMasterSchedule:{enabled:true}},{groupMasterSchedule:{enabled:true,start:'18:00',end:'18:00'}},{groupMasterSchedule:{enabled:true,start:'24:00',end:'09:00'}},{groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'},groupChatEnabled:true},{groupMasterSchedule:{enabled:'yes'}},{groupMasterSchedule:{timeZone:'UTC'}}]){r=await req(bad);eq(r.status,400);eq(fs.readFileSync(h.temp+'/config.json','utf8'),original,'rejected timer change atomic');}
+ await h.ensureSession('private:123');const ownerId=h.state.sessions['private:123'];r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}});eq(r.status,200);eq(r.groupChatEnabled,true);eq(r.masterScheduleState.crossMidnight,true);eq(r.masterScheduleState.nextTransitionOpen,false);eq(h.state.sessions['private:123'],ownerId);
+ now=Date.parse('2026-10-28T09:00:00+08:00');h.enforceMasterSchedule();r=await req();eq(r.groupChatEnabled,false);eq(r.masterScheduleState.nextTransitionAt,'2026-10-28T10:00:00.000Z');eq(r.masterScheduleState.nextTransitionOpen,true);
+ r=await req({groupChatEnabled:true});eq(r.groupChatEnabled,true);eq(r.groupMasterSchedule.enabled,false,'manual API disables timer');now+=3600000;h.enforceMasterSchedule();eq(h.groupMasterEnabled(),true,'manual state survives future ticks');
+ r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}});eq(r.groupChatEnabled,false,'enable immediately applies current closed period');r=await req({groupMasterSchedule:{enabled:false}});eq(r.groupChatEnabled,false,'disable keeps current master state');eq(r.groupMasterSchedule.start,'18:00','saved times retained when disabled');
+ r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}});const legacy=await fetch(base+'/api/role-mode',{method:'POST',headers:{'x-console-token':'fixture-console-token','content-type':'application/json'},body:JSON.stringify({mode:'active'})});eq(legacy.status,200);r=await req();eq(r.groupMasterSchedule.enabled,false,'legacy manual route also pauses timer');eq(r.groupChatEnabled,true);
+ r=await req({groupMasterSchedule:{enabled:true,start:'18:00',end:'09:00'}},'bad-token');eq(r.status,401);eq((await req()).groupMasterSchedule.enabled,false);
+ const saved=JSON.parse(fs.readFileSync(h.temp+'/config.json','utf8'));const next=await bridgeHarness({config:saved,globals:{Date:Clock}});try{eq(next.cfg.groupMasterSchedule.start,'18:00');eq(next.cfg.groupMasterSchedule.end,'09:00');eq(next.cfg.groupMasterSchedule.enabled,false);eq(next.cfg.groupPolicy.peak.ownerAtMention,false);}finally{await next.close();}
+}finally{await new Promise(r=>server.close(r));await h.close();}
+console.log('PASS master schedule API/persistence checks:',count);

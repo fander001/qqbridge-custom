@@ -1,0 +1,5 @@
+// ── 二代仿真模式（reserved2）配置 ─────────────────────────────────────────
+async function loadV2Config() {
+  void loadConversationControls();
+  try {
+    const r = await api('/api/socialV2/config');

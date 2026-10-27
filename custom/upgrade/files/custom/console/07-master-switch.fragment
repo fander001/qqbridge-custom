@@ -1,0 +1,11 @@
+  if (r.ok) refreshDshModel();
+});
+async function saveReplySwitch(enabled) {
+ const wasTimed=masterScheduleManaged;const status=document.getElementById('replySwitchStatus');const on=document.getElementById('silentOff'),off=document.getElementById('silentOn');on.disabled=off.disabled=true;
+ try {const r=await api('/api/control-settings','POST',{groupChatEnabled:enabled});if(!r.ok)throw new Error(r.error);await refresh();await loadConversationControls();if(wasTimed)document.getElementById('masterScheduleMsg').textContent='已手动切换总开关，定时已停用。';}
+ catch(e){status.textContent='开关保存失败：'+e.message;on.disabled=off.disabled=false;}
+}
+document.getElementById('silentOn').addEventListener('click',()=>saveReplySwitch(false));
+document.getElementById('silentOff').addEventListener('click',()=>saveReplySwitch(true));
+document.getElementById('wlSave').addEventListener('click', async () => {
+  const parse = (s) => s.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean).map(Number).filter(Number.isFinite);

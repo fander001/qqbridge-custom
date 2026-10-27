@@ -1,0 +1,352 @@
+--- a/src/bridge.js
++++ b/src/bridge.js
+@@ -28,6 +28,7 @@
+ import { hardenDir, manualDirCommand } from './state-acl.mjs';
+ import { extractForwardIds, forwardIdFromData, sanitizeForwardId, formatForwardResponse } from './forward.js';
+ import { resolvePriceTable } from './model-prices.js';
++import { autonomyScheduleState, nextAutonomyTransition } from './autonomy-schedule.js';
+ import { createTokenLedger } from './token-ledger.js';
+ import {
+   loadSlang,
+@@ -678,6 +679,7 @@
+     agentPreset: file.agentPreset ?? 'qq-chat',
+     workspaceTitle: file.workspaceTitle ?? 'QQ 聊天',
+     ownerQQ: normalizeOwnerQQ(file.ownerQQ),
++    autonomySchedule: file.autonomySchedule ?? { enabled: false },
+     allow: {
+       private: normalizeIdList(file.allow?.private ?? file.allow?.privates ?? []),
+       groups: normalizeIdList(file.allow?.groups ?? file.allow?.group ?? [])
+@@ -3298,6 +3300,15 @@
+         }
+         return;
+       }
++      // Peak/cancelled autonomous turns cannot continue reading or sending via MCP.
++      if (req.headers['x-agent-token']) {
++        for (const [key, st] of socialV2.conversations) {
++          if (tokenEq(String(req.headers['x-agent-token']), st.agentToken) && autonomyWorkBlocked(autonomyWork.get(key))) {
++            sendJson({ ok: false, error: '高峰时段已暂停自主活动；主人私聊仍可唤醒' }, 403);
++            return;
++          }
++        }
++      }
+       // 智能体调用隔离（集中关卡）。
+       //
+       // 背景：控制台令牌是「管理端全权」，会话令牌是「只能动自己这个会话」。MCP 工具进程
+@@ -3464,6 +3475,7 @@
+             // 上游健康只给操作者看：它包含网关诊断信息（good/hint），
+             // 属于管理侧观测，不该进 QQ 会话里那个受限的智能体视图。
+             snowluma: snowlumaHealthSnapshot(),
++            autonomySchedule: autonomyStatus(),
+             activity: readActivityTail(100)
+           });
+           return;
+@@ -8052,14 +8064,57 @@
+   }
+ 
+   // 入队校验无法约束排队等待期间的权限变化，每条消息临近实际发送时再次校验。
++  // Per-dispatch references protect queued QQ sends across a time boundary.
++  const autonomyWork = new Map();
++  let lastAutonomyAllowed = null;
++  function autonomyStatus() {
++    return { ...autonomyScheduleState(Date.now(), cfg.autonomySchedule),
++      nextTransition: nextAutonomyTransition(Date.now(), cfg.autonomySchedule) };
++  }
++  function ownerReplyWake(key, reason) {
++    return key === `private:${String(cfg.ownerQQ ?? '')}` && reason === 'private';
++  }
++  function autonomyWakeBlocked(key, reason) {
++    return Boolean(reason) && !ownerReplyWake(key, reason) && !autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed;
++  }
++  function autonomyWorkBlocked(work) {
++    return !!work?.autonomous && (work.cancelled || !autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed);
++  }
++  async function maintainAutonomySchedule() {
++    if (cfg.autonomySchedule?.enabled !== true) return;
++    const allowedNow = autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed;
++    const transition = allowedNow !== lastAutonomyAllowed;
++    lastAutonomyAllowed = allowedNow;
++    if (!allowedNow) {
++      for (const [key, work] of autonomyWork) {
++        if (!work.autonomous || work.cancelled) continue;
++        work.cancelled = true;
++        log(`[autonomy] 高峰时段，停止自主回合 ${key}`);
++        try { await withTimeout(api.stopSessionWork(work.sessionId), DSH_CONTROL_TIMEOUT_MS, 'stop scheduled autonomy'); }
++        catch (error) { log(`[autonomy] 停止自主回合失败 ${key}: ${error?.message ?? error}`); }
++      }
++      return;
++    }
++    if (currentMode !== 'reserved2' || socialV2.paused || cfg.socialV2?.enabled === false) return;
++    const ownerKey = `private:${String(cfg.ownerQQ ?? '')}`;
++    if (isSessionAllowedInCurrentMode(ownerKey)) getSocialV2State(ownerKey);
++    for (const key of socialV2.conversations.keys()) {
++      if (!isSessionAllowedInCurrentMode(key)) continue;
++      if (transition) setupSleepTimerV2(key);
++      scheduleProactiveCheckV2(key);
++    }
++  }
++
+   function captureSendGuard(key) {
++    const work = autonomyWork.get(key);
+     const policy = sessionPolicy(key);
+     const sessionId = state.sessions[key];
+     return () => {
+       if (!isSessionAllowedInCurrentMode(key) || policy !== sessionPolicy(key)
+           || (sessionId && state.sessions[key] !== sessionId)) {
+-        throw new Error('发送已取消：会话、模式或白名单已变化');
+-      }
++        throw new Error('发送已取消：会话、模式或白名单已');
++      }
++      if (autonomyWorkBlocked(work)) throw new Error('高峰时段禁止自主发言');
+     };
+   }
+ 
+@@ -9131,7 +9186,7 @@
+     if (!isSessionAllowedInCurrentMode(key)) throw new Error(`当前模式不允许会话 ${key}`);
+     // Recheck queued wakes at dispatch time: no model call while paused/disabled
+     // and no reserved2 prompt leaking into an ordinary chat after a mode switch.
+-    const wakeBlocked = () => opts.wakeReason && (currentMode !== 'reserved2' || socialV2.paused || cfg.socialV2?.enabled === false);
++    const wakeBlocked = () => opts.wakeReason && (currentMode !== 'reserved2' || socialV2.paused || cfg.socialV2?.enabled === false || autonomyWakeBlocked(key, opts.wakeReason));
+     const skipWake = () => {
+       pendingWakeKeys.delete(key);
+       disarmPendingWakeLease(key);
+@@ -9181,6 +9236,10 @@
+     // 媒体解析成功后再标记退场，避免解析异常时残留退场标记。
+     if (!isCurrentSession(key, sessionId)) throw new Error('投递前会话已重置或权限已变化');
+     if (opts.farewell) social.exitingSessions.add(sessionId);
++    if (wakeBlocked()) return skipWake();
++    if (opts.wakeReason && cfg.autonomySchedule?.enabled === true) {
++      autonomyWork.set(key, { autonomous: !ownerReplyWake(key, opts.wakeReason), sessionId, cancelled: false });
++    }
+     let accepted;
+     try {
+       accepted = await api.sessions.prompt({ sessionId, mode: 'queue', content });
+@@ -10397,6 +10456,7 @@
+   }
+ 
+   async function sendWakePromptV2(key, reason) {
++    if (autonomyWakeBlocked(key, reason)) return { ok: true, skipped: true, reason: 'peak' };
+     if (cfg.socialV2?.enabled === false) return;
+     if (currentMode !== 'reserved2' || socialV2.paused) return;
+     if (!isSessionAllowedInCurrentMode(key)) {
+@@ -10614,6 +10674,7 @@
+   }
+ 
+   function scheduleWakeV2(key, reason) {
++    if (autonomyWakeBlocked(key, reason)) return;
+     if (cfg.socialV2?.enabled === false) return;
+     if (socialV2.paused) return;
+     if (!isSessionAllowedInCurrentMode(key)) {
+@@ -10748,6 +10809,7 @@
+   }
+ 
+   function scheduleProactiveCheckV2(key) {
++    if (!autonomyScheduleState(Date.now(), cfg.autonomySchedule).allowed) return;
+     if (cfg.socialV2?.proactive?.enabled === false) return;
+     if (socialV2.paused || currentMode !== 'reserved2') return;
+     if (!isSessionAllowedInCurrentMode(key)) return;
+@@ -11003,7 +11065,7 @@
+       if (!st.bootstrapSent) {
+         st.bootstrapSent = true;
+         saveSocialV2State();
+-        scheduleWakeV2(key, 'bootstrap');
++        scheduleWakeV2(key, kind === 'private' && isOwner ? 'private' : 'bootstrap');
+       } else {
+         const reason = evaluateWakeTriggerV2(key, st, event, kind, textContent, plainContent, quoteTargetIsSelf);
+         if (reason) {
+@@ -11473,6 +11535,9 @@
+             // collector 生命周期见 trackTurnEvent()：只为 turn/start 建、空壳 turn/end 即清。
+             const { ended } = trackTurnEvent(frame.sessionId, frame.event);
+             if (ended) {
++              const finishedAutonomyWork = autonomyWork.get(key);
++              if (finishedAutonomyWork?.sessionId === frame.sessionId) autonomyWork.delete(key);
++              const suppressAutonomyNotice = autonomyWorkBlocked(finishedAutonomyWork);
+               // reserved2 无行动兜底：普通唤醒回合若既没发消息、也没 mark_read / set_wake_config，
+               // 则累计 noActionCount；达到阈值后自动重置 WakeConfig，避免 AI 卡死。
+               const silentQueueNow = social.silentTurns.get(frame.sessionId) ?? [];
+@@ -11693,7 +11758,7 @@
+                 // 以前这里只发 QQ、不写日志：出问题时 bridge.log 里什么都没有，排查只能靠猜（PR #24）。
+                 log(`⚠️ agent 处理出错 (${key})：${safeMsg}`);
+                 appendActivity(`${key} agent 处理出错：${safeMsg.slice(0, 80)}`);
+-                await sendToQQ(key, `⚠️ agent 处理出错：${safeMsg}`);
++                if (!suppressAutonomyNotice) await sendToQQ(key, `⚠️ agent 处理出错：${safeMsg}`);
+                 if (isFarewell) {
+                   const st = socialState(key);
+                   if (st.phase === 'exiting') {
+@@ -11705,7 +11770,7 @@
+                 }
+               } else if (ended.reason.kind === 'aborted') {
+                 log(`⏹️ 回合被中止 (${key})`);
+-                await sendToQQ(key, '⏹️ 已停止');
++                if (!suppressAutonomyNotice) await sendToQQ(key, '⏹️ 已停止');
+                 if (isFarewell) {
+                   const st = socialState(key);
+                   if (st.phase === 'exiting') {
+@@ -12052,6 +12117,9 @@
+   startDshWatch();
+   startSnowlumaWatch();
+   startConsoleServer();
++  const autonomyClock = setInterval(() => { void maintainAutonomySchedule().catch((error) => log('[autonomy] 时段检查失败:', error?.message ?? error)); }, 1000);
++  autonomyClock.unref?.();
++  await maintainAutonomySchedule();
+ 
+   await pumpMux();
+ }
+--- /dev/null
++++ b/src/autonomy-schedule.js
+@@ -0,0 +1,23 @@
++// Activity timing is independent of model prices and host timezone.
++export function autonomyScheduleState(atMs, schedule = {}) {
++  const ms = Number(atMs);
++  const enabled = schedule?.enabled === true;
++  const d = new Date(ms + 8 * 3600000);
++  if (!Number.isFinite(ms) || Number.isNaN(d.getTime())) return { enabled, allowed: false, reason: 'invalid-time' };
++  const date = d.toISOString().slice(0, 10);
++  const weekday = d.getUTCDay() || 7;
++  const minute = d.getUTCHours() * 60 + d.getUTCMinutes();
++  const holiday = (schedule.holidays || []).includes(date);
++  const peak = weekday <= 5 && !holiday && ((minute >= 540 && minute < 720) || (minute >= 840 && minute < 1080));
++  return { enabled, allowed: !enabled || !peak, reason: !enabled ? 'disabled' : peak ? 'peak' : 'off-peak',
++    timeZone: 'Asia/Shanghai', date, holiday, calendarVerified: (schedule.verifiedHolidayYears || []).includes(d.getUTCFullYear()) };
++}
++export function nextAutonomyTransition(atMs, schedule = {}) {
++  if (schedule?.enabled !== true || !Number.isFinite(Number(atMs))) return null;
++  const current = autonomyScheduleState(atMs, schedule).allowed;
++  let cursor = Math.floor(Number(atMs) / 60000) * 60000 + 60000;
++  for (let i = 0; i < 32 * 24 * 60; i++, cursor += 60000) {
++    if (autonomyScheduleState(cursor, schedule).allowed !== current) return cursor;
++  }
++  return null;
++}
+--- a/public/console.html
++++ b/public/console.html
+@@ -1799,6 +1799,7 @@
+       <div class="grid">
+         <section id="section-mode" data-page="overview" class="card span-all">
+       <h2>运行模式</h2>
++      <p class="meta" id="autonomyScheduleStatus" role="status"></p>
+       <div class="mode-row" id="modeRow">
+         <button data-mode="chat" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>聊天模式</strong><small>白名单内，随时对话</small></button>
+         <button data-mode="closed-agent" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>封闭 Agent</strong><small>仅管理员，完整工具</small></button>
+@@ -2726,6 +2727,14 @@
+ async function refresh() {
+   try {
+     const s = await api('/api/status');
++    const timing = s.autonomySchedule;
++    const timingEl = document.getElementById('autonomyScheduleStatus');
++    if (timingEl) timingEl.textContent = timing?.enabled
++      ? (timing.allowed ? '当前为空闲时段，允许自主活动。' : '当前为高峰时段，自主活动暂停，主人私聊照常回复。')
++        + ' 按北京时间：周一至周五 9:00–12:00、14:00–18:00 暂停自主活动，周末和已核实的法定节假日全天允许。'
++        + (timing.calendarVerified ? '' : ' 本年度节假日日历待更新，暂按普通工作日处理。')
++      : '';
++
+     document.querySelectorAll('#modeRow button').forEach(b => (b.classList.toggle('active', b.dataset.mode === s.mode), b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode))));
+     document.getElementById('roleText').textContent = s.role || '无';
+     document.getElementById('roleModeText').textContent = s.roleMode === 'silent' ? '静默' : '正常';
+--- a/scripts/audit-bridge-harness.mjs
++++ b/scripts/audit-bridge-harness.mjs
+@@ -17,6 +17,7 @@
+ import * as slang from '../src/slang-learner.js';
+ import * as sticker from '../src/sticker-lib.js';
+ import * as modelPrices from '../src/model-prices.js';
++import * as autonomySchedule from '../src/autonomy-schedule.js';
+ import * as tokenLedger from '../src/token-ledger.js';
+ import * as voiceLib from '../src/send-voice-lib.js';
+ import * as presetPrompt from '../src/preset-prompt.js';
+@@ -147,6 +148,7 @@
+     sendToQQ, sendStickerV2, handleIncoming, startConsoleServer, cfg, state, api, promptQueues,
+     getSocialV2State, appendSocialV2Message, recordSentMessagesV2,
+     buildWakePromptV2, buildWakeSnapshotV2, sendWakePromptV2, socialV2,
++    maintainAutonomySchedule, autonomyStatus, autonomyWork, captureSendGuard,
+     syncStickerLibrary, listStickersForV2, getStickerImageData,
+     refreshMode, modeAllowed, trackTurnEvent, replayPendingWakeReasonsV2,
+     collectors, setupSleepTimerV2,
+@@ -187,7 +189,7 @@
+     SnowLumaWebSocketClient: FakeBot, text: (s) => s,
+     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
+     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker,
+-    ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt,
++    ...modelPrices, ...autonomySchedule, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt,
+     // 桥接的出图出口会调归一化（体积/动图抽帧）：VM 里必须能拿到这几个函数。
+     normalizeImageForModel: mediaNormalize.normalizeImageForModel,
+     sniffImage: mediaNormalize.sniffImage,
+--- /dev/null
++++ b/scripts/test-autonomy-schedule.mjs
+@@ -0,0 +1,78 @@
++import assert from 'node:assert/strict';
++import { autonomyScheduleState as state, nextAutonomyTransition } from '../src/autonomy-schedule.js';
++import { bridgeHarness } from './audit-bridge-harness.mjs';
++const schedule = { enabled: true, holidays: ['2026-10-01'], verifiedHolidayYears: [2026] };
++const ms = text => Date.parse(text + '+08:00');
++let count = 0;
++for (const [time, expected] of [
++ ['2026-10-26T08:59:59',true],['2026-10-26T09:00:00',false],
++ ['2026-10-26T11:59:59',false],['2026-10-26T12:00:00',true],
++ ['2026-10-26T13:59:59',true],['2026-10-26T14:00:00',false],
++ ['2026-10-26T17:59:59',false],['2026-10-26T18:00:00',true],
++ ['2026-10-31T10:00:00',true],['2026-11-01T15:00:00',true],
++ ['2026-10-01T10:00:00',true],['2026-10-10T10:00:00',true],
++ ['2027-02-08T10:00:00',false]]) {
++ assert.equal(state(ms(time),schedule).allowed,expected,time); count++;
++}
++assert.equal(state(NaN,schedule).allowed,false);count++;
++assert.equal(state(ms('2027-02-08T10:00:00'),schedule).calendarVerified,false);count++;
++assert.equal(nextAutonomyTransition(ms('2026-10-26T08:59:59'),schedule),ms('2026-10-26T09:00:00'));count++;
++assert.equal(nextAutonomyTransition(ms('2026-10-26T09:00:00'),schedule),ms('2026-10-26T12:00:00'));count++;
++let now=ms('2026-10-26T10:00:00');
++class Clock extends Date { constructor(...args){super(...(args.length?args:[now]));} static now(){return now;} }
++const harness=()=>bridgeHarness({config:{autonomySchedule:schedule,socialV2:{enabled:true},allow:{private:['123'],groups:[]}},globals:{Date:Clock}});
++for (const reason of ['proactiveCheck','timeout','replyCheck','bootstrap','admin']) {
++ const h=await harness();try {h.setMode('reserved2');await h.sendWakePromptV2('private:123',reason);assert.equal(h.calls.prompts.length,0);count++;}finally{await h.close();}
++}
++{
++ const h=await harness();try {
++  h.setMode('reserved2');await h.sendWakePromptV2('private:123','private');
++  assert.equal(h.calls.prompts.length,1,'owner reply must work at peak');count++;
++ }finally{await h.close();}
++}
++{
++ now=ms('2026-10-26T08:59:59');const h=await harness();try {
++  h.setMode('reserved2');h.setReady(false);
++  await h.deliverPrompt('private:123','queued autonomy',{wakeReason:'proactiveCheck'});
++  now=ms('2026-10-26T09:00:00');h.setReady(true);await h.flushQueue();
++  assert.equal(h.calls.prompts.length,0,'offline queue must recheck time');count++;
++ }finally{await h.close();}
++}
++{
++ now=ms('2026-10-26T08:59:59');const h=await harness();try {
++  h.setMode('reserved2');
++  h.autonomyWork.set('private:123',{autonomous:true,sessionId:'auto',cancelled:false});
++  const guard=h.captureSendGuard('private:123');guard();
++  now=ms('2026-10-26T09:00:00');
++  assert.throws(guard);await h.maintainAutonomySchedule();
++  assert.ok(h.calls.cancelled.includes('auto'));count++;
++  h.autonomyWork.set('private:123',{autonomous:false,sessionId:'owner',cancelled:false});
++  await h.maintainAutonomySchedule();h.captureSendGuard('private:123')();
++  assert.ok(!h.calls.cancelled.includes('owner'));count++;
++  now=ms('2026-10-26T12:00:00');await h.maintainAutonomySchedule();
++  assert.ok(h.getSocialV2State('private:123').proactiveTimer,'resume owner opportunity timer');count++;
++  assert.equal(h.calls.prompts.length,0,'clock alone does not consume model tokens');count++;
++ }finally{await h.close();}
++}
++{
++ now=ms('2026-10-26T10:00:00');const h=await harness();try {
++  h.setMode('reserved2');h.cfg.socialV2.wake.batchWindowMs=1000;
++  await h.handleIncoming('private',123,{user_id:123,self_id:999,message_id:1,message:[{type:'text',data:{text:'hello'}}]},h.cfg);
++  await new Promise(r=>setTimeout(r,1200));
++  assert.equal(h.calls.prompts.length,1,'first owner private message at peak must wake as reply, not bootstrap');count++;
++ }finally{await h.close();}
++}
++{
++ now=ms('2026-10-26T10:00:00');const h=await harness();let server;try {
++  h.setMode('reserved2');const st=h.getSocialV2State('private:123');
++  h.autonomyWork.set('private:123',{autonomous:true,sessionId:'auto',cancelled:false});
++  server=h.startConsoleServer();if(!server.listening)await new Promise(r=>server.once('listening',r));
++  const headers={'x-console-token':'fixture-console-token','x-agent-call':'1','x-agent-token':st.agentToken};
++  let response=await fetch('http://127.0.0.1:'+server.address().port+'/api/status',{headers});
++  assert.equal(response.status,403);await response.text();count++;
++  h.autonomyWork.set('private:123',{autonomous:false,sessionId:'owner',cancelled:false});
++  response=await fetch('http://127.0.0.1:'+server.address().port+'/api/status',{headers});
++  assert.equal(response.status,200);const body=await response.json();assert.equal(body.ownerQQ,undefined);count++;
++ }finally{if(server)await new Promise(r=>server.close(r));await h.close();}
++}
++console.log('PASS autonomy schedule checks:',count);

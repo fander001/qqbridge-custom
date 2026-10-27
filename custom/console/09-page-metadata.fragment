@@ -1,0 +1,5 @@
+// Presentation layer: keep every existing control mounted so drafts and API contracts survive navigation.
+const consolePages = {
+  controls: ['开关控制', '群聊的开关，在这里统一管理。', '先看总开关，再设定高峰与闲时权限。主人私聊不受群聊开关和群聊时段策略影响。'],
+  overview: ['运行总览', '让每一次连接，都自然发生。', '掌握桥接状态，轻松管理你的 QQ 智能伙伴。'],
+  sessions: ['会话与审批', '让每一段对话，都有迹可循。', '查看 QQ 与 DSH 的会话映射，以及等待你回复的审批和提问。'],
