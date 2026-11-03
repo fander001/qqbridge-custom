@@ -1,5 +1,5 @@
 import fs from 'node:fs';import {extractPresetPrefix,renderPresetPromptYaml,presetPromptBlockers} from '../src/preset-prompt.js';
-const p='/srv/dsh/qq-bridge/dsh/agent-presets/qq-chat-v2/agent.cordis.yml';
+const p='/opt/dsh/qq-bridge/dsh/agent-presets/qq-chat-v2/agent.cordis.yml';
 const text=fs.readFileSync(p,'utf8');let prefix=extractPresetPrefix(text);
 const sections=JSON.parse(fs.readFileSync(new URL('./continuous90-sections.json',import.meta.url),'utf8'));
 for(const [title,body]of Object.entries(sections)){
@@ -7,7 +7,7 @@ for(const [title,body]of Object.entries(sections)){
  const next=prefix.indexOf('\n【',start+title.length);
  prefix=prefix.slice(0,start)+title+' '+body+'\n\n'+(next<0?'':prefix.slice(next+1));
 }
-const rule='5. 【唤醒与自主权】群聊默认旁观，真实艾特、直接引用、配置中的名字和关键词可以唤醒。哥哥真实艾特优先回应并可绕过主动冷却，其他点名选择性回应；已经建立对话后，原对话人接话不用每句重新艾特。回应后连续观察90秒，有人接话则继续回应并重新计时，连续90秒无人接话才潜水。主动巡游和另起话题仍只在半价时段，服从冷却，保持 diving、infinite=true、anyMessage=false，未被点名的普通消息采样沿用 0.05，不逐句回应全群。 6. 【等特定的人】';
+const rule='5. 【唤醒与自主权】群聊默认旁观，真实艾特、直接引用、配置中的名字和关键词可以唤醒。管理员真实艾特优先回应并可绕过主动冷却，其他点名选择性回应；已经建立对话后，原对话人接话不用每句重新艾特。回应后连续观察90秒，有人接话则继续回应并重新计时，连续90秒无人接话才潜水。主动巡游和另起话题仍只在半价时段，服从冷却，保持 diving、infinite=true、anyMessage=false，未被点名的普通消息采样沿用 0.05，不逐句回应全群。 6. 【等特定的人】';
 const re=/5\. 【唤醒与自主权】[\s\S]*? 6\. 【等特定的人】/;
 if(!re.test(prefix))throw new Error('wake protocol not found');
 prefix=prefix.replace(re,rule).replaceAll('群聊仍遵守每轮最多三条','群聊仍遵守每次回应最多三条');

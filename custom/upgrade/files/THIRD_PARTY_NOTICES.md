@@ -1,3 +1,7 @@
+# 当前版本说明（2026-11-03）
+
+当前上游为 `0.2.1-r2`，适用根目录原样保留的 `LICENSE`（PolyForm Noncommercial 1.0.0）和 `NOTICE.md`。下文记录旧版快照及依赖许可，不代表当前整体采用 MIT。实际依赖版本以当前 `package-lock.json` 为准；独立 `dsh-setting-restart` 保留自己的 MIT 许可证。
+
 # 第三方许可与来源说明
 
 本文件补充来源信息，不替代各项目的许可证，也不代表对第三方商业使用权限的保证。[LICENSE](LICENSE) 保留了上游完整 MIT 文本及其第三方说明。

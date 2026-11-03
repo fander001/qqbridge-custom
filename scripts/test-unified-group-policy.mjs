@@ -5,8 +5,8 @@ for(const bad of [null,[],{night:{}},{peak:[]},{peak:{textWake:1}},{offPeak:{oth
 assert.throws(()=>validateControlSettings({groupChatEnabled:false,replyToOthersEnabled:true}));count++;
 let now=Date.parse('2026-10-27T10:00:00+08:00');class Clock extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
 const math=Object.create(Math);math.random=()=>.01;
-const config={autonomySchedule:{enabled:true,peakWindows:[['09:00','12:00'],['14:00','18:00']],peakWeekdays:[1,2,3,4,5],holidays:[]},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true,conversationIdleMs:90000,sampleProbability:.05},wake:{batchWindowMs:1000,recommendedKeywords:['Sagiri']},proactive:{enabled:true}}};
-const make=async()=>{const h=await bridgeHarness({config:structuredClone(config),globals:{Date:Clock,Math:math}});h.setMode('reserved2');h.setSelfIdentity('Sagiri','999');return h;};
+const config={autonomySchedule:{enabled:true,peakWindows:[['09:00','12:00'],['14:00','18:00']],peakWeekdays:[1,2,3,4,5],holidays:[]},socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true,conversationIdleMs:90000,sampleProbability:.05},wake:{batchWindowMs:1000,recommendedKeywords:['fixture-role']},proactive:{enabled:true}}};
+const make=async()=>{const h=await bridgeHarness({config:structuredClone(config),globals:{Date:Clock,Math:math}});h.setMode('reserved2');h.setSelfIdentity('fixture-role','999');return h;};
 const key='group:456',pk='private:123';let msgId=10;
 const event=(uid=321,at=null,text='hello',quote=false)=>({user_id:uid,self_id:999,message_id:++msgId,message:[{type:'text',data:{text}},...(at?[{type:'at',data:{qq:at}}]:[]),...(quote?[{type:'reply',data:{id:'100'}}]:[])],sender:{nickname:'fixture'}});
 {
@@ -20,7 +20,7 @@ const event=(uid=321,at=null,text='hello',quote=false)=>({user_id:uid,self_id:99
 {
  const h=await make();try{
   const st=h.getSocialV2State(key);
-  for(const e of [event(321,'999'),event(321,null,'Sagiri'),event(123,null,'Sagiri'),event(321,null,'ambient')])await h.handleIncoming('group',456,e,h.cfg);
+  for(const e of [event(321,'999'),event(321,null,'fixture-role'),event(123,null,'fixture-role'),event(321,null,'ambient')])await h.handleIncoming('group',456,e,h.cfg);
   eq(st.unread.length,0,'blocked calls are not retained as deferred replies');eq(h.calls.prompts.length,0);
   for(const reason of ['atMention','quoteReply','nameMention','groupFollowup','probability','proactiveCheck','timeout','bootstrap','admin']){await h.sendWakePromptV2(key,reason);eq(h.calls.prompts.length,0,reason+' blocked at peak');}
   await h.handleIncoming('group',456,event(123,'999'),h.cfg);await new Promise(r=>setTimeout(r,1250));eq(h.calls.prompts.length,1,'owner real @ wakes');
@@ -31,8 +31,8 @@ const event=(uid=321,at=null,text='hello',quote=false)=>({user_id:uid,self_id:99
 }
 {
  now=Date.parse('2026-10-27T19:00:00+08:00');const h=await make();try{
-  const st=h.getSocialV2State(key),name=event(321,null,'Sagiri');eq(h.evaluateWakeTriggerV2(key,st,name,'group','Sagiri','Sagiri',false),'nameMention');
-  h.cfg.groupPolicy={offPeak:{textWake:false}};eq(h.evaluateWakeTriggerV2(key,st,name,'group','Sagiri','Sagiri',false),null,'text switch cannot be bypassed by sampling');
+  const st=h.getSocialV2State(key),name=event(321,null,'fixture-role');eq(h.evaluateWakeTriggerV2(key,st,name,'group','fixture-role','fixture-role',false),'nameMention');
+  h.cfg.groupPolicy={offPeak:{textWake:false}};eq(h.evaluateWakeTriggerV2(key,st,name,'group','fixture-role','fixture-role',false),null,'text switch cannot be bypassed by sampling');
   eq(h.evaluateWakeTriggerV2(key,st,event(),'group','hello','hello',false),'probability');
   h.cfg.groupPolicy.offPeak.ambientSampling=false;eq(h.evaluateWakeTriggerV2(key,st,event(),'group','hello','hello',false),null);eq(h.groupMessageAdmitted(key,event(),'hello',false),true,'idle reader may buffer context without model call');
   h.cfg.groupPolicy.offPeak.idleProactive=false;eq(h.groupMessageAdmitted(key,event(),'hello',false),false);

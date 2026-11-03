@@ -157,7 +157,8 @@ console.log('## MCP 工具与 bridge 路由');
     'sendVoiceV2', 'sendVoiceForV2', 'resolveVoicePathForV2', 'resolveVoicePathForOperator',
     'voiceBudgetCheck', 'assertOutboundAuditOk', 'type: \'record\''
   ]) {
-    ok(bridge.includes(s), `bridge 包含 ${s}`);
+    const implementation = s === "type: 'record'" ? fs.readFileSync(path.join(ROOT, 'custom/runtime/media-compat.js'), 'utf8') : bridge;
+    ok(implementation.includes(s), `bridge 或媒体适配模块包含 ${s}`);
   }
   ok(bridge.includes("v2ToolEnabled('sendVoice')"), 'send-voice 路由受 sendVoice 开关控制');
   ok(/resolveVoicePathForV2[\s\S]{0,1200}allowAbsolutePath/.test(bridge), 'AI 通道绝对路径受 allowAbsolutePath 约束');
@@ -202,7 +203,7 @@ console.log('## preset 人设已描述语音能力（否则 AI 不知道自己�
   ok(preset.includes('qq_send_voice'), 'qq-chat-v2 人设提到 qq_send_voice');
   ok(preset.includes('qq_list_voices'), 'qq-chat-v2 人设提到 qq_list_voices');
   ok(preset.includes('verified=true'), '人设说明 verified=true 的语义');
-  ok(/不要假装发了语音/.test(preset), '人设禁止假装发语音');
+  ok(/(?:不要假装发了语音|不假装已发送)/.test(preset), '人设禁止假装发语音');
   // DSH 0.1.7 起守卫的权威实现只有一份，在 qq-agent-presets bundle 里
   // （dsh/agent-presets/<preset>/qq-tool-restrict.mjs 只是 re-export 壳）。
   const restrict = fs.readFileSync(path.join(ROOT, 'plugins', 'qq-agent-presets', 'qq-tool-restrict.mjs'), 'utf8');

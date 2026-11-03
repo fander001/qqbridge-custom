@@ -1,5 +1,5 @@
 from pathlib import Path
-b=Path('/srv/dsh/qq-bridge');p=b/'src/bridge.js';s=p.read_text()
+b=Path('/opt/dsh/qq-bridge');p=b/'src/bridge.js';s=p.read_text()
 def replace(a,c):
  global s
  assert a in s,a[:120]

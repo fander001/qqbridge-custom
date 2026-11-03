@@ -1,5 +1,5 @@
 from pathlib import Path
-p=Path('/srv/dsh/qq-bridge/public/console.html');s=p.read_text()
+p=Path('/opt/dsh/qq-bridge/public/console.html');s=p.read_text()
 a=s.index('<section id="section-silent"');z=s.index('<section id="section-dsh"',a)
 s=s[:a]+'''<section id="section-silent" data-page="overview" class="card">
 <h2>\u5bf9\u5916\u56de\u590d\u603b\u5f00\u5173</h2>

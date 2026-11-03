@@ -3,12 +3,13 @@ let now=Date.parse('2026-10-26T19:00:00+08:00');
 class Clock extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
 const config={autonomySchedule:{enabled:true,holidays:[],verifiedHolidayYears:[2026]},
  socialV2:{enabled:true,groupObserver:{enabled:true,continuousReplies:true,conversationIdleMs:90000,sampleProbability:0,followupQuietMs:2000},
- wake:{batchWindowMs:1000,recommendedKeywords:['Sagiri','fixture-name'],maxWakePerMinute:3,maxWakePerHour:12}}};
-const make=async()=>{const h=await bridgeHarness({config:structuredClone(config),globals:{Date:Clock}});h.setMode('reserved2');h.setSelfIdentity('Sagiri','999');return h;};
+ wake:{batchWindowMs:1000,recommendedKeywords:['fixture-role','fixture-name'],maxWakePerMinute:3,maxWakePerHour:12}}};
+const make=async()=>{const h=await bridgeHarness({config:structuredClone(config),globals:{Date:Clock}});h.setMode('reserved2');h.setSelfIdentity('fixture-role','999');return h;};
 const key='group:456',event=(uid=321,at=null,text='hello')=>({user_id:uid,self_id:999,message_id:Date.now(),message:[{type:'text',data:{text}},...(at?[{type:'at',data:{qq:at}}]:[])],sender:{nickname:'fixture'}});
 const pause=()=>new Promise(r=>setTimeout(r,140));
+let fixtureMessageId=0;
 let checks=0;const eq=(a,b,m)=>{assert.equal(a,b,m);checks++;};const ok=(a,m)=>{assert.ok(a,m);checks++;};
-function incoming(h,e,quoteSelf=false){const st=h.getSocialV2State(key);const text=e.message.find(s=>s.type==='text').data.text;h.appendSocialV2Message(key,'fixture',text,text,quoteSelf,e.user_id===123,1,[],e.user_id);h.noteGroupIncoming(key,e,text,quoteSelf);return st.lastUnreadSeq;}
+function incoming(h,e,quoteSelf=false){const st=h.getSocialV2State(key);const text=e.message.find(s=>s.type==='text').data.text;h.appendSocialV2Message(key,'fixture',text,text,quoteSelf,e.user_id===123,++fixtureMessageId,[],e.user_id);h.noteGroupIncoming(key,e,text,quoteSelf);return st.lastUnreadSeq;}
 async function engaged(h){const e=event(321,'999');incoming(h,e);await h.deliverPrompt(key,'',{wakeReason:'atMention@seq1'});await h.sendToQQ(key,'hello');return h.groupTurns.get(key);}
 {
  const h=await make();try{
@@ -57,8 +58,8 @@ for(const reason of ['ownerAtMention','atMention','nameMention']){
 }
 {
  now=Date.parse('2026-10-27T10:00:00+08:00');const h=await make();try{
-  const st=h.getSocialV2State(key),call=event(321,null,'Sagiri hello');
-  eq(h.evaluateWakeTriggerV2(key,st,call,'group','Sagiri hello','Sagiri hello',false),null);
+  const st=h.getSocialV2State(key),call=event(321,null,'fixture-role hello');
+  eq(h.evaluateWakeTriggerV2(key,st,call,'group','fixture-role hello','fixture-role hello',false),null);
   eq(h.autonomyWakeBlocked(key,'nameMention@seq4'),true);
   const missing=event(123,'999');delete missing.self_id;
   eq(h.evaluateWakeTriggerV2(key,st,missing,'group','hello','hello',false),'ownerAtMention','trusted self ID fallback');

@@ -62,7 +62,7 @@ test('private reply timing and group hard limits are distinguished', () => {
   assert.match(prefix, /【私聊等下文】.*purpose="messages"/);
   assert.match(prefix, /【每次回应预算】.*最多三条/);
   assert.match(prefix, /至少冷却两分钟/);
-  assert.match(prefix, /哥哥真实艾特.*绕过主动冷却/);
+  assert.match(prefix, /管理员真实艾特.*绕过主动冷却/);
 });
 
 test('visual, forwarding, sticker, voice and web capability contracts remain', () => {

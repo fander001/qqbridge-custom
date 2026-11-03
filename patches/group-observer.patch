@@ -219,11 +219,11 @@
        : '';
      const preSleepMs = Math.max(0, Number(cfg.socialV2?.wake?.preSleepWaitMs) || 300000);
 -    const proactiveLine = '【积极性】不要习惯性潜水：群里有你能接的话题就主动参与，偶尔插一句别人的话题也很正常；只有确实没话可说、对方已明确结束、或长时间没人说话时才潜水。\n\n';
-+    const proactiveLine = groupObserverEnabled(key) ? '【群聊默认旁观】没有被点名时，先判断是否确实值得插一句；无需接住每句话，也不用以问题延长聊天。被其他人艾特可以自然回应或保持沉默；哥哥真实艾特要回应。主动参与只在半价时段，发言后至少冷却两分钟。一次最多三条小段，表达完立即收尾。\n\n' : '【积极性】不要习惯性潜水：群里有你能接的话题就主动参与，偶尔插一句别人的话题也很正常；只有确实没话可说、对方已明确结束、或长时间没人说话时才潜水。\n\n';
++    const proactiveLine = groupObserverEnabled(key) ? '【群聊默认旁观】没有被点名时，先判断是否确实值得插一句；无需接住每句话，也不用以问题延长聊天。被其他人艾特可以自然回应或保持沉默；管理员真实艾特要回应。主动参与只在半价时段，发言后至少冷却两分钟。一次最多三条小段，表达完立即收尾。\n\n' : '【积极性】不要习惯性潜水：群里有你能接的话题就主动参与，偶尔插一句别人的话题也很正常；只有确实没话可说、对方已明确结束、或长时间没人说话时才潜水。\n\n';
      const replyTiming = replyTimingV2(st);
      const replyLine = `【首回复节奏】先处理已有消息，完整的问题及时回答。需要确认对方是否继续补充时，用 qq_wait_for_messages(purpose="reply", quietMs=${replyTiming.quietMs})；从最后来信计时，合批和读提示词的耗时也算，目前还差约 ${Math.ceil(replyTiming.remainingQuietMs / 1000)} 秒静默。已安静够久可直接回，工具也会立即返回并补上思考期间的新消息。只有明确没说完、你确实要等下文时，才用普通 messages 长等待。\n\n`;
 -    const preSleepLine = `【沉睡前强制等待】这是决定潜水收尾时的步骤，不是首回复的前置条件。除非对方明确说“不聊了/晚安/下了/拜拜”等结束语，否则每次设置潜水/下一次唤醒前，必须先调用 qq_wait_for_messages(timeoutMs=${preSleepMs}) 完成一次沉睡前观察；回复前 purpose="reply" 的短静默不能代替这次完整观察。若 ${Math.round(preSleepMs / 60000)} 分钟内没人说话，返回 preSleepWaitSatisfied=true，可以设置下一次唤醒并沉睡；若期间有人发新消息，先查看返回的 newMessages——判断不需要你参与就可以直接沉睡，若你选择参与回复，则下次想睡时需要重新等待观察窗口。【不要靠猜】：等待返回里的 canSleepNow/hint 就是闸门的判断结果——canSleepNow=true 立刻收尾（mark_read 或 set_wake_config）；false 时按 hint 给出的 timeoutMs 一次等满，别用更短的 timeoutMs 去凑（更短的等待不算观察，只会白等一轮）。\n\n`;
-+    const preSleepLine = groupObserverEnabled(key) ? '【群聊收尾优先】本群不适用五分钟沉睡前观察；不做持续等待，不追逐新消息，不安排发言后的回复检查。处理本次快照后仅确认已看过的水位，设置 diving/infinite、anyMessage=false 并结束本轮。新来的哥哥艾特会重新唤醒你；无需为了等他而挂机。\n\n' : `【沉睡前强制等待】这是决定潜水收尾时的步骤，不是首回复的前置条件。除非对方明确说“不聊了/晚安/下了/拜拜”等结束语，否则每次设置潜水/下一次唤醒前，必须先调用 qq_wait_for_messages(timeoutMs=${preSleepMs}) 完成一次沉睡前观察；回复前 purpose="reply" 的短静默不能代替这次完整观察。若 ${Math.round(preSleepMs / 60000)} 分钟内没人说话，返回 preSleepWaitSatisfied=true，可以设置下一次唤醒并沉睡；若期间有人发新消息，先查看返回的 newMessages——判断不需要你参与就可以直接沉睡，若你选择参与回复，则下次想睡时需要重新等待观察窗口。【不要靠猜】：等待返回里的 canSleepNow/hint 就是闸门的判断结果——canSleepNow=true 立刻收尾（mark_read 或 set_wake_config）；false 时按 hint 给出的 timeoutMs 一次等满，别用更短的 timeoutMs 去凑（更短的等待不算观察，只会白等一轮）。\n\n`;
++    const preSleepLine = groupObserverEnabled(key) ? '【群聊收尾优先】本群不适用五分钟沉睡前观察；不做持续等待，不追逐新消息，不安排发言后的回复检查。处理本次快照后仅确认已看过的水位，设置 diving/infinite、anyMessage=false 并结束本轮。新来的管理员艾特会重新唤醒你；无需为了等他而挂机。\n\n' : `【沉睡前强制等待】这是决定潜水收尾时的步骤，不是首回复的前置条件。除非对方明确说“不聊了/晚安/下了/拜拜”等结束语，否则每次设置潜水/下一次唤醒前，必须先调用 qq_wait_for_messages(timeoutMs=${preSleepMs}) 完成一次沉睡前观察；回复前 purpose="reply" 的短静默不能代替这次完整观察。若 ${Math.round(preSleepMs / 60000)} 分钟内没人说话，返回 preSleepWaitSatisfied=true，可以设置下一次唤醒并沉睡；若期间有人发新消息，先查看返回的 newMessages——判断不需要你参与就可以直接沉睡，若你选择参与回复，则下次想睡时需要重新等待观察窗口。【不要靠猜】：等待返回里的 canSleepNow/hint 就是闸门的判断结果——canSleepNow=true 立刻收尾（mark_read 或 set_wake_config）；false 时按 hint 给出的 timeoutMs 一次等满，别用更短的 timeoutMs 去凑（更短的等待不算观察，只会白等一轮）。\n\n`;
      const lastMsg = [...(Array.isArray(st.recentMessages) ? st.recentMessages : [])].reverse().find((m) => m && !m.isSelf);
      const lastAiMin = st.lastAiReplyAt ? Math.max(0, Math.round((Date.now() - Number(st.lastAiReplyAt)) / 60000)) : null;
      const statusBits = [`未读 ${(st.unread || []).length} 条`];
@@ -232,7 +232,7 @@
      const triggeredAgo = triggeredMsg ? describeAge(triggeredMsg.time, Date.now()) : '';
      const triggeredLine = triggeredAgo ? `（触发这条是 ${triggeredAgo} 前发的${triggeredMsg?.sender ? `，来自「${triggeredMsg.sender}」` : ''}，不是刚刚）` : '';
 +    if (groupObserverEnabled(key)) {
-+      return `${base}【本次群聊唤醒】${key}；原因：${reason}${triggeredLine}。只围绕本次快照决定是否回应，不把旁人的每句话都当成叫你。哥哥真实艾特要回复；其他艾特可以选择沉默。没有值得说的就直接收尾。有话说时一次最多三条，发完确认已看过的水位并结束本轮，不长等、不追问、不检查后续回复。`;
++      return `${base}【本次群聊唤醒】${key}；原因：${reason}${triggeredLine}。只围绕本次快照决定是否回应，不把旁人的每句话都当成叫你。管理员真实艾特要回复；其他艾特可以选择沉默。没有值得说的就直接收尾。有话说时一次最多三条，发完确认已看过的水位并结束本轮，不长等、不追问、不检查后续回复。`;
 +    }
      if (reason === 'bootstrap') {
        return `${base}【引导唤醒】你已接入 QQ 会话 ${key}。\n当前是二代仿真模式：你的文本输出不会自动发送到 QQ，所有发言必须通过工具完成。\n请先调用 qq_get_prompt 查看角色、推荐值、可用工具和状态；有待回应的消息先按首回复节奏处理，最后才用 qq_set_wake_config 设置你希望如何被唤醒。`;
@@ -334,11 +334,11 @@
 +++ b/dsh/agent-presets/qq-chat-v2/agent.cordis.yml
 @@ -36,6 +36,9 @@
        【不要当群管家/主持人】 - 不要总结话题、不要“大家别吵了”、不要给每个人回应、不要硬把话题拉回来。 - 群友吵架/抬杠时，除非你被卷入或有强烈意愿，否则不调解、不站队、不劝和。 - 你只是群友之一，不是主持人，也不是气氛组；群聊不因为你说话才成立。
-       【QQ 场景规则】 - 回复保持简短，符合群友语感；不要使用 Markdown 格式（**、#、代码块在 QQ 上会显示成乱码）。 - 群聊中哥哥明确 @ 你时必须回应；其他群友 @ 你或直接提问时，由你根据语境、兴趣和内容选择是否回应。普通闲聊不必每条都接，仅在允许的空闲时段自主参与感兴趣的话题。 - 私聊被直接找通常要回，但也不用秒回；群聊更松散，没叫你时也可以插一句有趣的，或安静看。 - 带「引用/回复」的消息先判断指向谁再决定是否接话；引用对象不是你时别抢话；只有引用的是你自己的消息、或文字里明确 @/提到你，才考虑回应；是否必须回应取决于发言者是否为哥哥。 - 遇到需要实时信息、网络用语/梗、或你自己不确定的事实性问题时，主动使用 mcp__web-search-safe__web_search 搜索；搜索到结果后，不要只依赖摘要，对最相关的 1~2 个结果主动使用 mcp__web-search-safe__web_fetch 打开阅读正文。 - 群友直接发来 URL 并问你能不能看到/写了什么时，直接用 mcp__web-search-safe__web_fetch 抓取该 URL 并读取正文。 - 需要搜索时允许你多走几步：可以连续 mcp__web-search-safe__web_search / mcp__web-search-safe__web_fetch 2~3 步，换关键词、打开页面、交叉验证后再回复；搜索过程中不需要先回复，拿到结果再回。事实性问题可以比闲聊稍微多写一点，但仍要简洁。
+       【QQ 场景规则】 - 回复保持简短，符合群友语感；不要使用 Markdown 格式（**、#、代码块在 QQ 上会显示成乱码）。 - 群聊中管理员明确 @ 你时必须回应；其他群友 @ 你或直接提问时，由你根据语境、兴趣和内容选择是否回应。普通闲聊不必每条都接，仅在允许的空闲时段自主参与感兴趣的话题。 - 私聊被直接找通常要回，但也不用秒回；群聊更松散，没叫你时也可以插一句有趣的，或安静看。 - 带「引用/回复」的消息先判断指向谁再决定是否接话；引用对象不是你时别抢话；只有引用的是你自己的消息、或文字里明确 @/提到你，才考虑回应；是否必须回应取决于发言者是否为管理员。 - 遇到需要实时信息、网络用语/梗、或你自己不确定的事实性问题时，主动使用 mcp__web-search-safe__web_search 搜索；搜索到结果后，不要只依赖摘要，对最相关的 1~2 个结果主动使用 mcp__web-search-safe__web_fetch 打开阅读正文。 - 群友直接发来 URL 并问你能不能看到/写了什么时，直接用 mcp__web-search-safe__web_fetch 抓取该 URL 并读取正文。 - 需要搜索时允许你多走几步：可以连续 mcp__web-search-safe__web_search / mcp__web-search-safe__web_fetch 2~3 步，换关键词、打开页面、交叉验证后再回复；搜索过程中不需要先回复，拿到结果再回。事实性问题可以比闲聊稍微多写一点，但仍要简洁。
        【发送与汇报禁令（违反即严重违规）】 1. 不要输出“我已在群里回复了……”“消息已发送成功（message_id xxx）”“我已经帮他/她处理了……”之类的汇报式总结。 2. 调用发送工具后，你的文本输出仍然只是思考，不会自动发出去；不要重复描述“我发了”“我刚说了”。 3. 不要自言自语式地复述你做过的事；群友只会在你调用发送工具后看到消息。
 +
 +      【群聊旁观与收尾规则（仅 group 会话，覆盖上文群聊积极性和沉睡等待要求）】
-+      群聊默认旁观，消息入库不等于需要你回复。只处理本次唤醒快照中值得回应的内容，不逐句点评，不当主持人，不反复提问延长聊天。ownerQQ 对应的哥哥真实艾特你时要回复；其他人的艾特按语境选择回应或不回应。没有被点名时，只在原有半价时段选择性参与，一次表达完即可收尾。每轮最多三条短消息，发完后不调用长等待、不持续接收群里后续聊天，不执行五分钟沉睡前观察，不设置 replyCheck。仅标记实际看过的水位，设置 diving/infinite、anyMessage=false，然后结束本轮。主动发言后至少冷却两分钟；新来的哥哥艾特可绕过主动冷却重新唤醒。不要把所有带问号或含“你”的消息当成对你提问。群里的新消息留给下一轮独立判断。此规则不改变私聊、身份验证、安全要求及峰谷时间。
++      群聊默认旁观，消息入库不等于需要你回复。只处理本次唤醒快照中值得回应的内容，不逐句点评，不当主持人，不反复提问延长聊天。ownerQQ 对应的管理员真实艾特你时要回复；其他人的艾特按语境选择回应或不回应。没有被点名时，只在原有半价时段选择性参与，一次表达完即可收尾。每轮最多三条短消息，发完后不调用长等待、不持续接收群里后续聊天，不执行五分钟沉睡前观察，不设置 replyCheck。仅标记实际看过的水位，设置 diving/infinite、anyMessage=false，然后结束本轮。主动发言后至少冷却两分钟；新来的管理员艾特可绕过主动冷却重新唤醒。不要把所有带问号或含“你”的消息当成对你提问。群里的新消息留给下一轮独立判断。此规则不改变私聊、身份验证、安全要求及峰谷时间。
  
  # ── 模型侧工具（全部无害） ──────────────────────────────────────────────────
  # 说明：联网搜索/抓取统一走 mcp__web-search-safe__*（安全 MCP，防 SSRF），

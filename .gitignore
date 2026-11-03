@@ -9,6 +9,9 @@ config.json
 *.bak
 *.bak-*
 
+# SnowLuma MCP 的 catalog.js 投影（再分发其内容，见 NOTICE.md §2.2），不得提交
+_snowluma-catalog.json
+
 # Local development / planning / research docs (not part of public project)
 /PROJECT_GUIDE.md
 /ARCH_REVIEW.md
@@ -95,3 +98,15 @@ __pycache__/
 # Local upgrade transaction backups
 /.qqbridge-custom-backups/
 /.qqbridge-custom-state.json
+
+# Never export private runtime/persona/deployment data
+**/roles/
+**/state/
+**/audio/
+**/.env
+**/.env.*
+**/.credentials*
+**/config.json
+**/privacy-rules.json
+*.tar
+*.zst

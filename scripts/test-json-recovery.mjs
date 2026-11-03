@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
-import {apply as retryApply} from '/srv/dsh/runtime/packages/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm-retry/lib/index.js';
-import {resolveRetryPolicy} from '/srv/dsh/runtime/packages/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js';
-import {DeepSeekAdapter,resolveAdapterOptions} from '/srv/dsh/runtime/packages/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js';
+import {apply as retryApply} from '/opt/dsh/runtime/packages/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm-retry/lib/index.js';
+import {resolveRetryPolicy} from '/opt/dsh/runtime/packages/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js';
+import {DeepSeekAdapter,resolveAdapterOptions} from '/opt/dsh/runtime/packages/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js';
 const rows=yaml.load(fs.readFileSync('patches/deepseek-json-retry.patch.yml','utf8'));
 let checks=0;const eq=(a,b,m)=>{assert.equal(a,b,m);checks++;};
 for(const row of rows){

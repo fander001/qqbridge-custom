@@ -84,7 +84,8 @@ export async function prepareUpgrade(bundle,target) {
       const dest=safeDestination(scratch,f.path);fs.mkdirSync(path.dirname(dest),{recursive:true});
       copyBytes(safeDestination(path.join(bundle,'files'),f.path),dest);
     }
-    fs.writeFileSync(path.join(scratch,'package.json'),JSON.stringify({type:'module'}));
+    // Keep a patched upstream package manifest intact; the fallback is only for syntax checks without one.
+    if(!fs.existsSync(path.join(scratch,'package.json')))fs.writeFileSync(path.join(scratch,'package.json'),JSON.stringify({type:'module'}));
     // Parse every changed JavaScript file without importing or running application code.
     for(const relative of touched.filter(p=>/\.(?:mjs|js)$/.test(p))) {
       const result=spawnSync(process.execPath,['--check',safeDestination(scratch,relative)],{encoding:'utf8'});

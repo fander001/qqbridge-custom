@@ -45,5 +45,5 @@ fs.copyFileSync(path.join(root,'custom/upgrade-runner.mjs'),path.join(output,'ap
 fs.copyFileSync(path.join(root,'LICENSE'),path.join(output,'LICENSE'));
 fs.copyFileSync(path.join(root,'NOTICE'),path.join(output,'NOTICE'));
 fs.copyFileSync(path.join(root,'custom/upgrade-readme.md'),path.join(output,'README.md'));
-fs.writeFileSync(path.join(output,'package.json'),JSON.stringify({name:'qqbridge-custom-upgrade',private:true,type:'module',license:'MIT'},null,2)+'\n');
+fs.writeFileSync(path.join(output,'package.json'),JSON.stringify({name:'qqbridge-custom-upgrade',private:true,type:'module',license:JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).license},null,2)+'\n');
 console.log(JSON.stringify({bundleId,patchedFiles:patchedFiles.map(x=>x.path),overlayFiles:overlays.length,patchLines:patch.split('\n').length},null,2));

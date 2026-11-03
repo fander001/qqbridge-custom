@@ -1,27 +1,47 @@
 {
   "format": 1,
-  "bundleId": "45c483044cf3a1619db7",
+  "bundleId": "7d53b8d0b762ab40fc2c",
   "upstream": {
     "repository": "https://github.com/Derpyu520/qq-bridge",
-    "commit": "a49877f4e58d04e47532d44b803360d0f001160d",
-    "version": "0.2.1-r1"
+    "commit": "b80fa51bc03fc4d5a1ef9a4cad7029e796b8fc67",
+    "version": "0.2.1-r2"
   },
-  "patchSha256": "3c419d3c62b493b569a6729d2af45e98f19431351856b9eb2251a9ede7d37d0f",
+  "patchSha256": "83f33ee3b146e0874296ad83dcc3302270437d5c96eec6f2332025ddc65d4f21",
   "patchedFiles": [
     {
+      "path": ".gitattributes",
+      "beforeSha256": "d4e759069de92da85112cd3f2eab1f1cc8a5104720a2c6bb7a3dac3f3549ebbe",
+      "afterSha256": "8eb2e68adf0ef44ba81b073e2660655db1d7dc0421fba378823d2aa7f97642df"
+    },
+    {
       "path": ".gitignore",
-      "beforeSha256": "9cb2c727c1cea955952bf8bd0f1a065a90e77df444355e4e140ece796690e929",
-      "afterSha256": "7d9bcbe481e8eed7655d0737122a97ddb01cc57a716a458ed3722694fea1c75d"
+      "beforeSha256": "2005378be477ff0c6149b05c242741bd339e9b8e947a0c1cdbb2f0ce24c992ae",
+      "afterSha256": "efbfd606ccc29d98da48ba735aaf4e9ae28403d3672a30aafbf489728943499f"
+    },
+    {
+      "path": "README.en.md",
+      "beforeSha256": "98469b60470d4c76cbe9a9fc63a6fd267a24aa772bbb406d76592a9d7f2c38f0",
+      "afterSha256": "41ea499917cf333b92ce74c85dc240cd0c69d754911ffbe6fc0a8aa87bcd2bd3"
     },
     {
       "path": "dsh/agent-presets/qq-chat-v2/agent.cordis.yml",
-      "beforeSha256": "ded3b2757f1767102d3c811e4a1b33ca77593d37418b58675e4a2f61c399b625",
-      "afterSha256": "9e07d991d916f607a2ec8a1a490036cd0437b3eb526cfd960e64f0a655b99028"
+      "beforeSha256": "d2f86fb2f083a6afe2c2690ffcb9b21cb51528ea0b6d2a6e45e9e38c9c410951",
+      "afterSha256": "b53e183417999d172750d15a086766d414460c595b1b74db60ea24971665e8ea"
+    },
+    {
+      "path": "package.json",
+      "beforeSha256": "2e81a27e0c77727374590596b7abc733185c2a0a14736659b461e1e56f0ded5a",
+      "afterSha256": "482f724ea04553babbcfc32998660835a69b9d20cbc51aafce5ccb5e3a631fc3"
+    },
+    {
+      "path": "plugins/qq-agent-presets/presets/qq-chat-v2.patch.yml",
+      "beforeSha256": "852f8ead77a68868b5d5b59cd579f1eef53173387bb7b4c1aaca3d4d09f276fc",
+      "afterSha256": "586be01d6eaf2674ef2955dfabe59c9c60d233604555175697a2f27840f82602"
     },
     {
       "path": "scripts/audit-bridge-harness.mjs",
-      "beforeSha256": "f39819c043bfee9f9930334a323b7ac452c58f69c92b62dad2c26e994f6c4d9d",
-      "afterSha256": "5381bbe72f595bc0efd1cefd867dda7b4a97674b8979f02a1acb8fe0f239b61b"
+      "beforeSha256": "5c1feffe0e7ff90f4dd5d652f661c5f62b72bd6e75836e6d429d67ffd30cad6c",
+      "afterSha256": "52f69858b8205b40bfac784d0464aa9c72f1cff756aab2feb952a862fc24cece"
     },
     {
       "path": "scripts/console-ui-fixture.mjs",
@@ -29,19 +49,39 @@
       "afterSha256": "9f17e9c46b3d77cd4d7c0ac4c73f3d73ff8d5541f6ea28a30deedfaf947049b3"
     },
     {
+      "path": "scripts/test-audit-bridge.mjs",
+      "beforeSha256": "4c4dcd2cef7c49757965b20c436647c1754e3cafb74a10e25339af185ff30de0",
+      "afterSha256": "a08eeb71c524571fe24d614e19048486df6db73217d2391b9f7ddbb54313c746"
+    },
+    {
       "path": "scripts/test-audit-regressions.mjs",
-      "beforeSha256": "0a1b9d67f2d64e628cc98585150d7150bcb5e37d9f7c68f0624d501050e368ad",
-      "afterSha256": "65956a98721d54ed813ff564bc823481688984ce9c8b97eb3ba213482c3bcc1f"
+      "beforeSha256": "48c0233739b7946ee29a37070d3dc27460f63261cae74cfe89af175f63cbaed9",
+      "afterSha256": "918c9cc487853f8903c431fba214ba3729d56b1a57c0877ef487b2da46b030fe"
+    },
+    {
+      "path": "scripts/test-code-scanning-boundaries.mjs",
+      "beforeSha256": "9c3acf94b16b584ba5fa32c8f1d2d814e3867dedbff67b962e6bd8fb27b052e4",
+      "afterSha256": "b12c66f5f4e442fd996025976591de007a843251b1b3421fa1a56c64b6eb9d8f"
     },
     {
       "path": "scripts/test-console-static.mjs",
-      "beforeSha256": "f341f29714fc3e4738c10d16901c445b03647e343dec64a4a9f80c9f6e05983d",
-      "afterSha256": "64a203295ba53891a2d09bcef2c3254190320a6e3c9a8158a6cf49e73f526c13"
+      "beforeSha256": "659d875638dc81e802f47129155f35ebbfd62aec8c0149b5167b71f4e29b99cc",
+      "afterSha256": "49f685b5e4780a814fdff2f63f352803876e33d7cd6f3537f37abe5f0d696381"
+    },
+    {
+      "path": "scripts/test-preset-prompt.mjs",
+      "beforeSha256": "a79adfbc3984ef812f4d869d7fd0a04b0fd4229d35aeee5670054940078b013a",
+      "afterSha256": "2635986fdc303fc18cebf54f5af4cfc0c5a230a36b6ffbe692d0c055e2329f34"
     },
     {
       "path": "scripts/test-qq-preset-contract.mjs",
       "beforeSha256": "8dd353233541ede82ee587ac1c84685c131f7ef5a284f91d1f358686818532ab",
-      "afterSha256": "f41cef02ae6bdd7cb95e8fec754448792f2b3d9562b1ebcd980df2ad3b377707"
+      "afterSha256": "dfd337ea9bbc93eb7ae0031aa10312a17b920671f4a494c0ee6f398a8c019dad"
+    },
+    {
+      "path": "scripts/test-role-card.mjs",
+      "beforeSha256": "609774246ad9d1dfb957585d4e33fed33de71663e7198d0aa47a850c8bc87245",
+      "afterSha256": "f7924a6a05e863e6a1a14a0f7e67c6d809a8849a088f3a00f2da1476cdcd9307"
     },
     {
       "path": "scripts/test-snowluma-upstream-health.mjs",
@@ -49,31 +89,31 @@
       "afterSha256": "6959364ca545a9d2411cb963f4501e938ac9a775cfb9e44831d12f3f5b52e6f7"
     },
     {
+      "path": "scripts/test-voice-system.mjs",
+      "beforeSha256": "6320b6385328bc75d8bf7a75456bb6c968bad00c0c932934b3255ee3d4b3a2c2",
+      "afterSha256": "9614b37accc0e186f09226fab512c8a86a0636d0f2dc35248c20e7aa2528d73e"
+    },
+    {
       "path": "scripts/test-voice.mjs",
       "beforeSha256": "b4ea3f8da694261afd8b2c7e97a7d314c291c987a072f2b772b85473236aef81",
-      "afterSha256": "5528e83c827417fd3c3ffe6f60d0f1ab835e4d7c3fb726a58632e53c031bb188"
+      "afterSha256": "8635820a0d97864b7d3c2e30e58b10c5902397750fff0aff797acd6b11e529e1"
     },
     {
       "path": "src/bridge.js",
-      "beforeSha256": "021f2e986fa62e724ea0ccf03b627a872413032f31d48166ef6cd8a6779d1ffa",
-      "afterSha256": "bee5300a0dfd4cb2ca1fc737331d949c6bb7e02dc2572443ba68dfd39f4e11bd"
+      "beforeSha256": "7b3038ee39058c665bbee7c04a54f5f89c74c2c524447140aa6bc55599f6acdf",
+      "afterSha256": "35b208301ebdef078767e839c1613878bae6509482874f5fc6e869ace1bf1682"
     }
   ],
   "overlays": [
     {
-      "path": ".gitattributes",
-      "sha256": "2242829f23a9567d4f938258331ddbf35ce5f7885290480e6191e37a165b3038",
-      "bytes": 249
-    },
-    {
       "path": "NOTICE",
-      "sha256": "945de85e90481de2acf3f988ee9843fd8686ecbf08a4da1359d1059202e18b6f",
-      "bytes": 1357
+      "sha256": "e5f99ad777ab5514592cde9b07f36f674e5d5718de101d13c185ac23ae5d527d",
+      "bytes": 690
     },
     {
       "path": "PROVENANCE.json",
-      "sha256": "2e2056e4f0e566684ba353fdeab46be12ca3ad8851a7fe618fb0504715562891",
-      "bytes": 1645
+      "sha256": "1a389d6e7ab3c32b7df26aea36c21acb4636ef1259a48826223e52ee57feafc1",
+      "bytes": 446
     },
     {
       "path": "PUBLICATION.md",
@@ -82,8 +122,8 @@
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "d799f539c6f2055544d4c0f6cfbc13bcf8eb8887872cf059dac06c5688bff150",
-      "bytes": 3291
+      "sha256": "33405f484dfc6e19907149f9271df2835645f1e5c56d6119a5ec402fe0564b54",
+      "bytes": 3646
     },
     {
       "path": "custom/README.md",
@@ -112,8 +152,8 @@
     },
     {
       "path": "custom/console/05-control-panels.fragment",
-      "sha256": "03bc5943beb4e9a9655846801e88025f22c9aa2fa274d7005f89dcfd2e5f00a6",
-      "bytes": 13594
+      "sha256": "7413577cacb29098ef609caae6cad216e9a3bb90668d3b8105af837a279eca02",
+      "bytes": 13600
     },
     {
       "path": "custom/console/06-refresh-status.fragment",
@@ -142,7 +182,7 @@
     },
     {
       "path": "custom/console/patches.json",
-      "sha256": "52c185ac747c3188285ac271ca787ac6f2a576f36e32898e7f0c5771301e36de",
+      "sha256": "f024dacff568f6042fd61bbb74709cc1b5a9aeb51aa6f544b9b397a247f15c7d",
       "bytes": 5891
     },
     {
@@ -182,13 +222,18 @@
     },
     {
       "path": "custom/runtime/group-chat.js",
-      "sha256": "db008bb6f528384bb59b5c94bb6aef93b1faf8ad28abcc8d7593960dd0206f1c",
-      "bytes": 27245
+      "sha256": "8f6ee1437c04c49a6dd94002678ed93654990500dec85e4379bc3ba545835b16",
+      "bytes": 28164
+    },
+    {
+      "path": "custom/runtime/media-compat.js",
+      "sha256": "9cd65e3d8a4e3a8661a1185dbdbac8bdd9eaf4a24ad38979a721a55a7f8405c4",
+      "bytes": 5470
     },
     {
       "path": "custom/runtime/preset-sync.js",
-      "sha256": "4dd93eafe6579344ccfe2e85d191a70d2df8f81eefaa757c90ba85bac91c9060",
-      "bytes": 975
+      "sha256": "a417f5f3d99030bc9d91098122761741091e337a06aa52a6ad18cab089174cac",
+      "bytes": 642
     },
     {
       "path": "custom/upgrade-readme.md",
@@ -197,48 +242,53 @@
     },
     {
       "path": "custom/upgrade-runner.mjs",
-      "sha256": "79f599e2cf02fa516e8b8d8b46ca9f72a9f6f79c283e1e319aa934edbdb9929a",
-      "bytes": 9531
+      "sha256": "12146e8b045a377f1c60030104b94b173e1b3ca9187c6e127c4d830ed32c33ff",
+      "bytes": 9692
     },
     {
       "path": "docs/BACKUP_AND_RESTORE.md",
-      "sha256": "9383e3c0fb47859509e651bc58e8dc1ef57928b790b4edcccc4cc3f5c112eb4f",
-      "bytes": 712
+      "sha256": "76f86e8f012c17477326aa9fc0046f5bb7ff51456cca170218ccf1a64bc743cb",
+      "bytes": 419
     },
     {
       "path": "docs/CUSTOMIZATIONS.md",
-      "sha256": "d405093bd28e52730d053f33c7bb1dff7a8dbe24dfb8ba98db0dbc50520c6199",
-      "bytes": 4792
+      "sha256": "9b09adf69d5496adce440499273bdb3a14eb57551a086f077e8ffa6fd6236f8c",
+      "bytes": 5731
+    },
+    {
+      "path": "docs/UPGRADE_20261103.md",
+      "sha256": "ad9cc1d2b2513c99a01ac3995a5ae19ec3554ea195003aebe9d20a6d6e1bb9e9",
+      "bytes": 680
     },
     {
       "path": "docs/UPSTREAM_UPGRADE.md",
-      "sha256": "46cad8878e534a4c770ba6c510446e4f54e96fb92597c8b744a071c08a4a8c50",
-      "bytes": 4424
+      "sha256": "ce268d43feb199c347542e1fc7a0aba194cf88cb569d868198cb78df58d2e060",
+      "bytes": 4672
     },
     {
       "path": "docs/upstream/.gitignore",
-      "sha256": "9cb2c727c1cea955952bf8bd0f1a065a90e77df444355e4e140ece796690e929",
-      "bytes": 2631
+      "sha256": "2005378be477ff0c6149b05c242741bd339e9b8e947a0c1cdbb2f0ce24c992ae",
+      "bytes": 2753
     },
     {
       "path": "docs/upstream/LICENSE",
-      "sha256": "4f6e6af70a3c1cfc06ad3c9fe09abfb142d02d99abae28b0b22128b7a2d90e39",
-      "bytes": 12934
+      "sha256": "758cdf1c546a7c2765609c762de63429b4d647d7bf8c267fd18dd8dfd4a91843",
+      "bytes": 4633
     },
     {
       "path": "docs/upstream/README.en.md",
-      "sha256": "41ea499917cf333b92ce74c85dc240cd0c69d754911ffbe6fc0a8aa87bcd2bd3",
-      "bytes": 11825
+      "sha256": "98469b60470d4c76cbe9a9fc63a6fd267a24aa772bbb406d76592a9d7f2c38f0",
+      "bytes": 6299
     },
     {
       "path": "docs/upstream/README.md",
-      "sha256": "c6d590ee63a512a6742cae1359b9b46c9e48f5d2ec6e0d69cd3ae8e9d76307c2",
-      "bytes": 33745
+      "sha256": "50e9dcda52e4060deb352acef3d31f44273a73c7ba08fbfe04caa2a244963df8",
+      "bytes": 5716
     },
     {
       "path": "docs/upstream/config.example.json",
-      "sha256": "e1346f09b2d4f4bef32c316616a0486867f0233065d26044fad6af5fcee87435",
-      "bytes": 7449
+      "sha256": "8af4e993dced2d3d3ce44d06c99b4d0377a208ff57d20bf598bb96bdf1ca61a4",
+      "bytes": 7629
     },
     {
       "path": "integrations/dsh/dsh-setting-restart/LICENSE",
@@ -297,13 +347,13 @@
     },
     {
       "path": "integrations/dsh/qq-agent-presets/package.json",
-      "sha256": "7bde5649dbe5f9ca1314043090520293aa655caa81691f06cfdad404135d3ab8",
-      "bytes": 472
+      "sha256": "ba77403a50ffa3486078bed98c6f45eda2b0b488959f96a7eeb5d00d7eee69b9",
+      "bytes": 497
     },
     {
       "path": "integrations/dsh/qq-agent-presets/presets/qq-chat-v2.patch.yml",
-      "sha256": "a6a4b69339a6f2902f6edb8f6dbba993b115adc1d0ccf1b253c01983b8faf867",
-      "bytes": 24690
+      "sha256": "586be01d6eaf2674ef2955dfabe59c9c60d233604555175697a2f27840f82602",
+      "bytes": 26596
     },
     {
       "path": "integrations/dsh/qq-agent-presets/presets/qq-chat.patch.yml",
@@ -311,9 +361,14 @@
       "bytes": 6759
     },
     {
+      "path": "integrations/dsh/qq-agent-presets/qq-self-key.mjs",
+      "sha256": "98e562d4c53d175b9262e346191c1506179cd227b4d066cf2e9f11b3b33ce17a",
+      "bytes": 7182
+    },
+    {
       "path": "integrations/dsh/qq-agent-presets/qq-tool-restrict.mjs",
-      "sha256": "a718b0938dec5c6cca8e874eb2f88cc3b4626ca943a8646bbd04f2a04503ea8a",
-      "bytes": 19058
+      "sha256": "2535d9ba3bf312cc9694e6aadbcb01c26d471ae4c09fa6fbc526ab9eeaa8a0c0",
+      "bytes": 20960
     },
     {
       "path": "integrations/dsh/qq-mode-console/cordis.patch.yml",
@@ -322,18 +377,18 @@
     },
     {
       "path": "integrations/dsh/qq-mode-console/lib/index.js",
-      "sha256": "3c6cd7b67a43510685231a0da4d4ac7bb78836380ca9268a3651a2e68c2f22ec",
-      "bytes": 7238
+      "sha256": "1bf52e959a575fb90f869cdedf0e86a49b1116094c9c9c13dbf28f57644c2b69",
+      "bytes": 7215
     },
     {
       "path": "integrations/dsh/qq-mode-console/package.json",
-      "sha256": "c17256cf209e88c3b67b9c48642eef7792a61f7e81ea5a299302fb045a5ea983",
-      "bytes": 387
+      "sha256": "77d3e1d91ea9c005838bf2da5e5eff176aac9c3437af6d5b1680f530ea2393f8",
+      "bytes": 412
     },
     {
       "path": "patches/console-controls-20261026.patch",
-      "sha256": "b08d09655281d82f0913843338ccbb5233e9a2290988cf3b64ced24c524d0933",
-      "bytes": 83665
+      "sha256": "e757e62212f65de67f6f37ed0010e81ff0931833425dabeca86e3e855559dd3f",
+      "bytes": 83782
     },
     {
       "path": "patches/deepseek-json-retry.patch.yml",
@@ -342,8 +397,8 @@
     },
     {
       "path": "patches/group-continuous90.patch",
-      "sha256": "73e820983792ead71694282ba5cec8838f6d21551c27f7ffd89eaf38da3f0d34",
-      "bytes": 90142
+      "sha256": "e5c65458d791d4095c8c077ae139fac01e1e4713fa0e50249e7b8c85e39405ba",
+      "bytes": 90337
     },
     {
       "path": "patches/group-master-schedule-20261027.patch",
@@ -352,18 +407,18 @@
     },
     {
       "path": "patches/group-observer.patch",
-      "sha256": "39583ddd7e1c9b09782e5f74fa2eace9a97db8b1d11e4d001c9205bed103da30",
-      "bytes": 36627
+      "sha256": "d84f86518986d34ce6ed680618d5cb2c93f09377204fc9bad2e5c5ea9fb3951c",
+      "bytes": 36648
     },
     {
       "path": "patches/group-participation.patch",
-      "sha256": "6a9231627e8eeb9088e0a3de22ced29aee752d428264915e83bcea1740e5cb05",
-      "bytes": 63508
+      "sha256": "736ef9c33d43715525f2f8f92fa2f8f768b29e568d15d90e8f6c6d4f49ae0679",
+      "bytes": 63553
     },
     {
       "path": "patches/json-recovery-and-preset-sync.patch",
-      "sha256": "5b6cf83e414f80f0ce2a20989ffbba71b80ce314fa08a742a47ca9ce039621c2",
-      "bytes": 23174
+      "sha256": "bb588642993277a53d23cbde12ab60b01ad71d4daceea877b925df0fb124ce2e",
+      "bytes": 23225
     },
     {
       "path": "patches/lan-console.patch",
@@ -377,38 +432,43 @@
     },
     {
       "path": "patches/qq-chat-v2-group-staged.patch.yml",
-      "sha256": "93d4e2f92a41fef89233c26d6ba638c68faf6d79d43fd4dfa2073e1d037715c0",
-      "bytes": 23841
+      "sha256": "74ae8b1b54caec1f76cfbcfbd18c2127cb9a7c761ffca46680cec4d7daf7b82a",
+      "bytes": 23907
     },
     {
       "path": "patches/unified-switches-20261027.patch",
-      "sha256": "01c052d2e8a042a8fb670e866952079bf432d9db513bf61fa4b8af48e7399f24",
-      "bytes": 84371
+      "sha256": "d4547163be48bff9161d3a8d8123f0caa36e71b270f5e341f6431f892f25faec",
+      "bytes": 84470
     },
     {
       "path": "scripts/apply-console-controls.py",
-      "sha256": "a978e488f689b0c856ff9d86e0af8bf5aeaafd2b330a3c9f0a1aa185d0df1f2c",
+      "sha256": "dc98222d6b7238aab56223f1c9c6246db9e4f9749373d1c47f99ef4afe87f681",
       "bytes": 8129
     },
     {
       "path": "scripts/apply-console-ui.py",
-      "sha256": "64cc6d2809a5275b48b851bba1827c2b3afc8f68943dd2073a80dc8ee5ce3b8c",
+      "sha256": "75d78b0503f32b213d1b4059fe60eda0ccec526e75dbb3a319b866353ad46af6",
       "bytes": 10244
     },
     {
       "path": "scripts/build-custom-upgrade.mjs",
-      "sha256": "dc1e0a3dfc7d765561b2987948bd1648b1ea60e6d31367633d00ade20a4534c8",
-      "bytes": 4283
+      "sha256": "988d3dd31b805a263394958fea91e77ef9bf196fe932763882777528a0cf2278",
+      "bytes": 4352
     },
     {
       "path": "scripts/continuous90-sections.json",
-      "sha256": "46e92c23b5d23733e7db3ccd291b8d3fc6de52c8d6f8ad03c602cdaa4b5db023",
-      "bytes": 3655
+      "sha256": "0219ba109070c7a337f01725b587b7f92db843d4ad42672403f8f44bad5aa26f",
+      "bytes": 3661
     },
     {
       "path": "scripts/test-autonomy-schedule.mjs",
       "sha256": "d8796958cc58577b44b3495997fbdd55b544f369b1a30c9e1c5a6b3c4d2fd6f7",
       "bytes": 4775
+    },
+    {
+      "path": "scripts/test-collect-napcat.mjs",
+      "sha256": "f8292dc4c5397a6eaa8b1d13817f63e78c5cd56712f7483cf2cace17b6d75026",
+      "bytes": 2534
     },
     {
       "path": "scripts/test-console-controls-ui.mjs",
@@ -417,18 +477,18 @@
     },
     {
       "path": "scripts/test-console-controls.mjs",
-      "sha256": "3772eb2dd773596337fe8dfe40a3f922f67a497e7e0405449a28ed195e165974",
-      "bytes": 5169
+      "sha256": "bb9d84da04fa9f2cb3b74bfb40348d1954dd1ef0da7573a045d3966f7d567dc0",
+      "bytes": 5181
     },
     {
       "path": "scripts/test-custom-modules.mjs",
-      "sha256": "8c44a8858985d4da04dbffda06f8fefdef6c0a622e5950f0cc3e3002bbdc9851",
-      "bytes": 3658
+      "sha256": "3f08c915436364a238b2474d105bf1ef8fe0d5ca5520ddd829831bb0e5333a27",
+      "bytes": 3725
     },
     {
       "path": "scripts/test-custom-regression.mjs",
-      "sha256": "61890a10240dc5e235cf59883cea90a6188778be2ec3bd7124a4b6a657c53c0c",
-      "bytes": 1438
+      "sha256": "9139eea3264f3f8713d0ec1382edc2ebe3e88449ccb6fce3be4e20906828c3a7",
+      "bytes": 1490
     },
     {
       "path": "scripts/test-custom-upgrade.mjs",
@@ -437,8 +497,8 @@
     },
     {
       "path": "scripts/test-group-continuous90.mjs",
-      "sha256": "d6fbdbd878e4d15fb74ee11a0017808a754dd911e744f9f5355244b5f63af5bc",
-      "bytes": 10592
+      "sha256": "deb89e3af22a57f7205f7842a358c86764d78eba92c046528b848210ed802312",
+      "bytes": 10663
     },
     {
       "path": "scripts/test-group-master-schedule.mjs",
@@ -456,13 +516,8 @@
       "bytes": 5174
     },
     {
-      "path": "scripts/test-installed-preset-sync.mjs",
-      "sha256": "f6847235b35670f3247e2e61bd0004f2b073465fa37601e7784e3d743dbb2c2c",
-      "bytes": 1969
-    },
-    {
       "path": "scripts/test-json-recovery.mjs",
-      "sha256": "e366346325a10791083ef50bfe4ec60ce6fc577dadb2deee664648c208059a47",
+      "sha256": "4b724a8bb8228570790ed672ee596b2f72fe059746c27deaece31ad4eb925190",
       "bytes": 4634
     },
     {
@@ -477,18 +532,23 @@
     },
     {
       "path": "scripts/test-unified-group-policy.mjs",
-      "sha256": "4d8ee62c651e0d534904ca90abeaef0cf61de0385d37d52bfc21fdc9edf34684",
-      "bytes": 5701
+      "sha256": "c359bb19f77630b392fe9830ea926ccbb7571b4c495e75181dd36acde9c272d6",
+      "bytes": 5755
+    },
+    {
+      "path": "scripts/test-voice-docker.mjs",
+      "sha256": "a0b13b20fd171b3962822afa7afccc0600f931244b5a06266711877149f6e371",
+      "bytes": 3950
     },
     {
       "path": "scripts/update-continuous90-preset.mjs",
-      "sha256": "98810ab9ebc6cc49ede8937342a0a49a56b5ccbc5c4e82e27a7f1977fa6d0070",
-      "bytes": 2455
+      "sha256": "afdca2de50ea6a7c2317d05d47e5af37e4529e7bd56c1db4c480c36534fa1a45",
+      "bytes": 2458
     },
     {
       "path": "scripts/update-json-guidance.mjs",
-      "sha256": "f9d51ef542265508f95a9c6f888164f12c038c6b7f69c8f5d70fceab244136fd",
-      "bytes": 1272
+      "sha256": "caa7d076ca300ea354198e63487adc939889ddb46f8429627a4eb0085b102329",
+      "bytes": 1278
     },
     {
       "path": "src/autonomy-schedule.js",

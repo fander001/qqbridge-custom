@@ -93,8 +93,8 @@ test('统计与小节报告可用于控制台预览', () => {
 });
 
 test('真实人格卡可用，且筛选不丢公共内容', () => {
-  const file = new URL('../roles/小鲸鱼.md', import.meta.url);
-  const raw = fs.readFileSync(file, 'utf8');
+  // Synthetic public fixture; never read a private role card.
+  const raw = '# 小鲸鱼\n\n## 公共说明\n合成夹具测试去 AI 味等文字的保留。\n\n## 一代 [v1]\n一代测试。\n\n## 二代 [v2]\n二代测试。';
   const v2 = selectRoleText(raw, 'v2');
   const v1 = selectRoleText(raw, 'v1');
   assert.ok(v2.length > 0 && v1.length > 0);

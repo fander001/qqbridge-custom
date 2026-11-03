@@ -49,3 +49,14 @@
 `custom/` 是独立定制的维护入口；`src/bridge.js` 中保留必要接入点。不得为了减少补丁行数，删除出站复查、权限变化取消或令牌隔离。
 
 `patches/` 是历史参考，不能按文件名逐个重新叠加。今后的统一应用入口是 `custom/upgrade/`。升级流程、检查命令和失败处理见 [UPSTREAM_UPGRADE.md](UPSTREAM_UPGRADE.md)。
+
+
+## 2026-11-03 新基线适配
+
+- 基线为 qq-bridge 0.2.1-r2（b80fa51b），DSH 默认渠道 0.2.1-rc.5。
+- `custom/runtime/media-compat.js`：语音按字节跨容器传输；表情共享缓存路径、原生收藏结果、MD5 去重与会话内备注。
+- `custom/runtime/group-chat.js`：发送成功后扣额、幂等提交，合并上游暂停/关闭与显式白名单复查。
+- `custom/runtime/preset-sync.js`：保留 sibling 插件布局，复用上游标准/旧布局同步实现。
+- 事件入口、等待、唤醒及发送关卡保留必要短接入点；没有插件钩子的地方不能只移动代码而丢掉真实校验。
+- 定制预设保留人格、群聊规则、19 首清唱说明与参数语义，并合入上游会话隔离规则；生成 bundle 与源一致。
+- 实际配置、人格、聊天数据、语音库、JSON 重试、HTTPS 网关和 NapCat 原生音频入口单独保留，不由源码包覆盖。

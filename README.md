@@ -10,6 +10,7 @@
 - 每日定时开关：北京时间，支持跨午夜；手动切换会停用定时。
 - 高峰／闲时权限矩阵：分别控制主人艾特、普通艾特、文字召唤、引用、续聊、聊天抽样及冷场检查。
 - 选择性续聊：相关接话可延长观察窗口，支持冷却、抽样概率与分条预算，不要求每句都回。
+- 媒体兼容：语音跨容器传输、成功后扣额，表情缓存、MD5 去重与会话备注。
 - 独立“开关控制”页面：保留原控制台，上游 HTML 与定制片段分开维护。
 - 局域网反向代理的入口校验，以及 DSH bundle 预设同步适配。
 
@@ -41,10 +42,10 @@ node custom/upgrade/apply.mjs apply --target <新版源码目录>
 
 ## 安装与使用
 
-需要 Node.js **22.13+**、兼容的 DSH 和 OneBot v11 服务。本地定制原基线为 qq-bridge `0.2.1-r1`，已适配的原部署 DSH 为 `0.2.1-rc.3`。
+需要 Node.js **22.13+**、兼容的 DSH 和 OneBot v11 服务。本地定制原基线为 qq-bridge `0.2.1-r2`，已适配的原部署 DSH 为 `0.2.1-rc.5`。
 
 ```sh
-npm ci
+npm ci --legacy-peer-deps
 cp config.example.json config.json
 ```
 
@@ -62,7 +63,7 @@ Windows 可使用 `Copy-Item config.example.json config.json`。随后填写自�
 node scripts/test-custom-regression.mjs
 ```
 
-18 组本地隔离回归覆盖群聊策略、定时、续聊、控制台、网关及权限边界。使用临时配置和模拟 QQ/DSH，不调用模型或向真实 QQ 发消息。补丁包还在干净基线、兼容的上游改动及 Windows 换行场景下验证。
+20 组本地隔离回归覆盖群聊策略、定时、续聊、控制台、网关及权限边界。使用临时配置和模拟 QQ/DSH，不调用模型或向真实 QQ 发消息。补丁包还在干净基线、兼容的上游改动及 Windows 换行场景下验证。
 
 这些检查证明测试覆盖范围内的行为；不代替你部署后对真实 DSH、OneBot 及网络访问的验证。
 
@@ -83,3 +84,8 @@ node scripts/test-custom-regression.mjs
 依赖、外部服务、角色素材及商标仍受各自条款约束，不能将全部依赖概括为 MIT。尤其 SnowLuma 相关包的许可声明需单独核实。这里不分发已安装的依赖或 SnowLuma/NapCat/QQ 本体。
 
 QQ 消息与上下文可能发送给 DSH 和配置的模型服务；启用搜索、网页抓取后，相关请求还会发送给相应服务。请按自己的数据和访问边界配置。
+
+
+## 当前公开版本
+
+基线为 `0.2.1-r2`。角色、账号和部署信息已通用化，实际人格和语音库不在仓库中。当前上游采用根目录 `LICENSE` 的 PolyForm Noncommercial 1.0.0，第三方声明见 `NOTICE.md` 与 `THIRD_PARTY_NOTICES.md`。

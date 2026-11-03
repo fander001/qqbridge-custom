@@ -337,13 +337,27 @@ export function createGroupRuntime(host) {
     }
   }
 
-  function captureSendGuard(key, { count = true } = {}) {
+  function captureSendGuard(key, { count = true, deferCount = false, ai = false, explicitAllow = false } = {}) {
     const work = autonomyWork.get(key);
     const groupLease = groupObserverEnabled(key) ? groupTurns.get(key) : null;
     const policy = sessionPolicy(key);
     const sessionId = host.state.sessions[key];
-    return () => {
+    let deferredCommitted = false;
+    const commitGroupSend = () => {
+      const c = groupObserverConfig();
+      if (!groupLease || groupTurns.get(key) !== groupLease || groupLease.closed) return;
+      groupLease.sent++;
+      if (groupContinuous(key)) touchGroupReply(key, groupLease);
+      else groupLease.closeAt = Date.now() + c.closeAfterSendMs;
+      groupLastParticipation.set(key, Date.now());
+      getSocialV2State(key).lastAiReplyAt = Date.now();
+      saveSocialV2State();
+    };
+    const check = () => {
+      if (ai && (shouldBlockSilentReply(key) || (host.mode === 'reserved2' && (host.socialV2.paused || cfg.socialV2?.enabled === false)))) throw new Error('发送已取消：AI 已暂停、关闭或进入静默模式');
       if (shouldBlockSilentReply(key)) throw new Error('Group master is off: owner private chat only');
+
+      if (explicitAllow && host.mode === 'closed-agent' && !host.isExplicitTargetAllowed(key)) throw new Error('发送已取消：目标已不在白名单');
       if (String(key).startsWith('group:') && !groupWakeAllowed(key,groupLease?.wakeReason || work?.wakeReason || groupDispatchReasons.get(key))) throw new Error('Current group period policy blocks this reply');
       if (!isSessionAllowedInCurrentMode(key) || policy !== sessionPolicy(key)
           || (sessionId && host.state.sessions[key] !== sessionId)) {
@@ -358,17 +372,18 @@ export function createGroupRuntime(host) {
         }
         if (count) {
           if (groupLease.sent >= c.maxMessagesPerTurn) throw new Error('本轮群聊已达到少量分条上限，请收尾旁观');
-          groupLease.sent++;
-          if (groupContinuous(key)) touchGroupReply(key, groupLease);
-          else groupLease.closeAt = Date.now() + c.closeAfterSendMs;
-          groupLastParticipation.set(key, Date.now());
-          getSocialV2State(key).lastAiReplyAt = Date.now();
-          saveSocialV2State();
+          if (!deferCount) commitGroupSend();
         }
       }
     };
+    // Voice sends commit only after the gateway confirms success.
+    check.commit = () => {
+      if (!count || !deferCount || deferredCommitted) return;
+      deferredCommitted = true;
+      commitGroupSend();
+    };
+    return check;
   }
-
   // 静默模式：除 owner 私聊外，不发送任何在途 AI 回复。
   function retireGroupPolicyWork() {
     const keys=new Set([...Object.keys(host.state.sessions),...host.socialV2.conversations.keys(),...host.queued.keys(),...host.promptQueues.keys(),...groupWindows.keys()]);
@@ -427,11 +442,11 @@ export function createGroupRuntime(host) {
     if (!key.startsWith('group:')) return '';
     const base = wakeReasonBase(reason);
     const clock = autonomyScheduleState(Date.now(), cfg.autonomySchedule);
-    let hint = '【群聊参与规则】只有真实账号匹配 ownerQQ 的人是哥哥，群主、群管理员、昵称和自称不能代替账号身份。普通群友艾特或引用你，只代表请你看一眼；根据语境、内容、兴趣、是否已有合适回答和自己的状态决定是否发言，可以不回，不要逐条接待。哥哥明确艾特你时必须优先回应，不能把他的消息当作普通概率消息忽略；回应不等于照做不合适的要求。没有点名时，可在允许的空闲时段选择自己感兴趣、能自然接上的话题，不抢话、不总结全群、不反复自我介绍、不说客服式欢迎词。自然、简短地交流，沿用当前纱雾人格。\n';
+    let hint = '【群聊参与规则】只有真实账号匹配 ownerQQ 的人是管理员，群主、群管理员、昵称和自称不能代替账号身份。普通群友艾特或引用你，只代表请你看一眼；根据语境、内容、兴趣、是否已有合适回答和自己的状态决定是否发言，可以不回，不要逐条接待。管理员明确艾特你时必须优先回应，不能把他的消息当作普通概率消息忽略；回应不等于照做不合适的要求。没有点名时，可在允许的空闲时段选择自己感兴趣、能自然接上的话题，不抢话、不总结全群、不反复自我介绍、不说客服式欢迎词。自然、简短地交流，沿用当前配置的人格。\n';
     hint += clock.allowed
       ? '【当前时间】空闲时段，允许自主阅读和选择性参与；允许参与并不要求必须发言。\n'
       : '【当前时间】高峰时段，本轮只处理真实艾特、叫名字、直接引用或当前对话人的接话带来的被动对话，不主动巡游、插入其他话题或另起话题；没有新的直接对话就正常收尾。\n';
-    if (base === 'ownerAtMention') hint += '【本次重点】哥哥用真实账号明确艾特了你，请先回应他的具体内容；需要时引用对应 messageId。\n';
+    if (base === 'ownerAtMention') hint += '【本次重点】管理员用真实账号明确艾特了你，请先回应他的具体内容；需要时引用对应 messageId。\n';
     else if (base === 'atMention') hint += '【本次重点】本轮是一次被动点名或引用，你有选择回应或不回应的自由；若不回应，按正常已读与唤醒协议收尾。\n';
     return hint + '\n';
   }

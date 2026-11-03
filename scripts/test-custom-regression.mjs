@@ -8,6 +8,7 @@ const tests=[
  'test-group-master-schedule.mjs','test-master-schedule-api.mjs','test-console-controls-ui.mjs',
  'test-unified-group-policy.mjs','test-unified-controls-api.mjs','test-console-controls.mjs',
  'test-group-continuous90.mjs','test-group-observer.mjs','test-group-participation.mjs',
+ 'test-voice-docker.mjs','test-collect-napcat.mjs',
  'test-autonomy-schedule.mjs','test-audit-bridge.mjs','test-qq-preset-contract.mjs',
  'test-installed-preset-sync.mjs','test-custom-modules.mjs','test-console-static.mjs',
  'test-audit-security.mjs','test-audit-security-mcp.mjs','test-audit-regressions.mjs'

@@ -5,14 +5,15 @@ import crypto from 'node:crypto';
 import {bridgeHarness} from './audit-bridge-harness.mjs';
 import {consoleGateway} from '../custom/runtime/console-gateway.js';
 import {readCustomizedConsole,renderCustomizedConsole} from '../custom/console/render.js';
-const expectedUi='2803174ebce7a0804caea546513757d6861a903e41b2ae3faaf306fabe0c6fb7';
+// Captured public UI after replacing deployment-specific role wording.
+const expectedUi='3e8f87e725bf79083d0e4dd5de0e22293a09bfe3d558336b8d7b9842d69ea93a';
 const html=readCustomizedConsole();
 const currentUi=crypto.createHash('sha256').update(html).digest('hex');
 const baseHash=crypto.createHash('sha256').update(fs.readFileSync(new URL('../public/console.html',import.meta.url))).digest('hex');
 if(baseHash==='6f7c7e15ecea2e4ffec06770e655e549fb1a2960441ea4f89ff22ebbff686a22')assert.equal(currentUi,expectedUi,'the pinned upstream must preserve the captured pre-refactor view');
 assert.ok(html.includes('id="section-silent" data-page="controls"'));
 assert.throws(()=>renderCustomizedConsole('<html>incompatible upstream</html>'),/anchor conflict/);
-const secret='fixture-only-'.repeat(4),origin='https://192.0.2.5:3100';
+const secret='fixture-'.repeat(6),origin='https://192.0.2.5:3100';
 const env={QQ_BRIDGE_CONSOLE_ORIGIN:origin,QQ_BRIDGE_GATEWAY_KEY:secret};
 const request=(method='GET',headers={},address='127.0.0.1')=>({method,headers,socket:{remoteAddress:address}});
 assert.equal(consoleGateway(request('GET',{'x-qq-gateway-key':secret}),'192.0.2.5:3100',env).gatewayRequest,true);

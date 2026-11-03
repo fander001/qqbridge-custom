@@ -1,30 +1,13 @@
-qqbridge魔改版 — 本地定制及来源声明
+qqbridge 本地定制及来源声明
 
-This project is based on:
-  qq-bridge / QSH
-  https://github.com/Derpyu520/qq-bridge
-  Baseline recorded by the installation:
-  a49877f4e58d04e47532d44b803360d0f001160d
+Upstream: Derpyu520/qq-bridge 0.2.1-r2
+Commit: b80fa51bc03fc4d5a1ef9a4cad7029e796b8fc67
+Copyright (c) 2026 Derpyu520 and qq-bridge contributors
+Local modifications and documentation: Copyright (c) 2026 fander001
 
-Original copyright:
-  Copyright (c) 2026 Derpyu520 and qq-bridge / QSH contributors
-
-Local modifications and new documentation:
-  Copyright (c) 2026 fander001
-
-The original LICENSE is retained verbatim, including its upstream third-party
-and compliance notes. Local modifications and new documentation are provided
-under the MIT license terms in LICENSE. This notice does not relicense
-third-party dependencies, external services, or character artwork.
-
-The separately included dsh-setting-restart plugin retains its own copyright
-and MIT license in integrations/dsh/dsh-setting-restart/LICENSE.
-Other deployed qq-bridge plugin copies derive from the same upstream project.
-
-This is a personally customized local backup, not an official release by
-DeepSeek, Tencent/QQ, NapCat, SnowLuma, or the upstream qq-bridge maintainer.
-No upstream endorsement is implied.
-
-此仓库为脱敏公开源码副本。真实配置、人格卡、状态、日志、已安装依赖及完整运行
-归档保留在本地，不作为本仓库的源码提交或公开发行内容。
-第三方软件、图片、名称与商标的权利仍归各自权利人。
+The current upstream LICENSE and NOTICE.md are retained verbatim. The new
+upstream baseline uses PolyForm Noncommercial 1.0.0. This local notice does
+not replace its terms or relicense third-party components. The independent
+dsh-setting-restart plugin retains its original MIT license and notices.
+Historical snapshots and original notices remain in .private/.
+This is a personally customized deployment, not an official upstream release.
