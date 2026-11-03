@@ -13,6 +13,22 @@ index 7c14fa2..02296ce 100644
  # Windows .bat 必须 CRLF：cmd.exe 对 LF-only 批处理有已知怪癖（label/goto 场景），
  # 而 start.bat 的守护循环正是 goto loop。
  #
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 7e9b2e1..f04247d 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -105,8 +105,9 @@ jobs:
+ 
+       # 注意：不能用 --ignore-scripts。postinstall 会给 @snowluma/sdk 的相对导入补 .js，
+       # 跳过它 test-snowluma-upstream-health.mjs 必然失败（上游包的 ESM 打包问题）。
+-      - name: npm ci
+-        run: npm ci
++      # The public export excludes local .npmrc; this lockfile uses legacy peer resolution.
++      - name: npm ci --legacy-peer-deps
++        run: npm ci --legacy-peer-deps
+ 
+       - name: 依赖漏洞检查（阻止高危和严重漏洞）
+         run: npm audit --omit=dev --audit-level=high
 diff --git a/.gitignore b/.gitignore
 index 55270e0..8d81f19 100644
 --- a/.gitignore

@@ -105,8 +105,9 @@ jobs:
 
       # 注意：不能用 --ignore-scripts。postinstall 会给 @snowluma/sdk 的相对导入补 .js，
       # 跳过它 test-snowluma-upstream-health.mjs 必然失败（上游包的 ESM 打包问题）。
-      - name: npm ci
-        run: npm ci
+      # The public export excludes local .npmrc; this lockfile uses legacy peer resolution.
+      - name: npm ci --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: 依赖漏洞检查（阻止高危和严重漏洞）
         run: npm audit --omit=dev --audit-level=high

@@ -1,17 +1,22 @@
 {
   "format": 1,
-  "bundleId": "7d53b8d0b762ab40fc2c",
+  "bundleId": "d0ef24ae941fc0c7003b",
   "upstream": {
     "repository": "https://github.com/Derpyu520/qq-bridge",
     "commit": "b80fa51bc03fc4d5a1ef9a4cad7029e796b8fc67",
     "version": "0.2.1-r2"
   },
-  "patchSha256": "83f33ee3b146e0874296ad83dcc3302270437d5c96eec6f2332025ddc65d4f21",
+  "patchSha256": "a65c0c43fc9ff885f763aaafa0f20194e145807302cf5aac2b37e602d1a6eb60",
   "patchedFiles": [
     {
       "path": ".gitattributes",
       "beforeSha256": "d4e759069de92da85112cd3f2eab1f1cc8a5104720a2c6bb7a3dac3f3549ebbe",
       "afterSha256": "8eb2e68adf0ef44ba81b073e2660655db1d7dc0421fba378823d2aa7f97642df"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "beforeSha256": "af2bf0a00b5426fb7d314b9c518554ccdb1de76122211a36f5fd41b5b9a98151",
+      "afterSha256": "71c5ec2e5e3e6cf48631e00fe497144d551e36f33ab832861f0581a1cdb8e80b"
     },
     {
       "path": ".gitignore",
